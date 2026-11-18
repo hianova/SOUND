@@ -1,3 +1,4 @@
+#include "flow_ir.h"
 #include "sound.h"
 
 #include <stdio.h>
@@ -558,6 +559,106 @@ static uint32_t sound_test_t6_fuzz_4096(void) {
     return fails;
 }
 
+static uint32_t sound_test_t7_fir_lift(void) {
+    uint32_t fails = UINT32_C(0);
+    SoundArena arena;
+    uint8_t fir_buf[SOUND_FIR_BYTES];
+    size_t fir_len = 0U;
+    flow_ir_prog_t prog;
+    flow_ir_dag_stats_t dag;
+
+    /* 1. Lift Case 3 Park Rule (power=0x4, immunity=0x2, established=0x7) */
+    sound_arena_init(&arena);
+    arena.map.img_hdr.num_nodes = 5U;
+    arena.map.norm.duty_pos_mask = UINT64_C(0x2);
+    arena.map.norm.duty_neg_mask = UINT64_C(0x8);
+    arena.map.norm.power_mask = UINT64_C(0x4);
+    arena.map.norm.immunity_mask = UINT64_C(0x2);
+    arena.map.norm.rescission_power_mask = UINT64_C(0x4);
+    sound_set_node(&arena, 0U, "park_rule", SOUND_SORT_NORMATIVE, SOUND_EVID_ENACTED_NORM,
+                   SOUND_ASPECT_STATE, false, false, false, UINT64_C(0), UINT64_C(0), 1U,
+                   UINT64_C(0), UINT64_C(0));
+    sound_set_node(&arena, 1U, "sedan_ban", SOUND_SORT_NORMATIVE, SOUND_EVID_DIRECT,
+                   SOUND_ASPECT_STATE, false, false, false, UINT64_C(0), UINT64_C(0), 1U,
+                   UINT64_C(1), UINT64_C(0));
+    sound_set_node(&arena, 2U, "emergency_exc", SOUND_SORT_NORMATIVE, SOUND_EVID_ENACTED_NORM,
+                   SOUND_ASPECT_STATE, false, false, false, UINT64_C(0), UINT64_C(0), 1U,
+                   UINT64_C(0), UINT64_C(0));
+    sound_set_node(&arena, 3U, "ambulance_ban", SOUND_SORT_NORMATIVE, SOUND_EVID_DIRECT,
+                   SOUND_ASPECT_STATE, false, false, false, UINT64_C(0), UINT64_C(4), 1U,
+                   UINT64_C(1), UINT64_C(0));
+    sound_set_node(&arena, 4U, "escooter_ban", SOUND_SORT_NORMATIVE, SOUND_EVID_DIRECT,
+                   SOUND_ASPECT_STATE, false, false, true, UINT64_C(0), UINT64_C(0), 1U,
+                   UINT64_C(1), UINT64_C(0));
+    if (sound_eval(&arena) != SOUND_OK ||
+        sound_lift_to_fir(&arena, "case3_park", UINT32_C(0), fir_buf, sizeof(fir_buf), &fir_len) !=
+            SOUND_OK ||
+        fir_len != (size_t)SOUND_FIR_BYTES || !flow_ir_load_bytes(&prog, fir_buf, fir_len) ||
+        !flow_ir_validate(&prog) || !flow_ir_admits_unitary(&prog) ||
+        !flow_ir_analyze_dag(&prog, &dag)) {
+        return UINT32_C(1);
+    }
+
+    /* Immunity lock (bit 1) & No-Power lock (bit 0) prevent unauthorized mutation */
+    {
+        uint64_t inv[5] = {UINT64_C(0x2), UINT64_C(0), UINT64_C(0x1), UINT64_C(0), UINT64_C(0x2)};
+        uint64_t outv[4] = {0};
+        if (!flow_ir_eval_u64(&prog, inv, outv) || outv[0] != UINT64_C(0x2) ||
+            outv[1] != UINT64_C(0) || outv[2] != UINT64_C(0x4) || outv[3] != UINT64_C(0x7)) {
+            fails++;
+        }
+    }
+    /* Contradictory duty request on slot 2 rolls back */
+    {
+        uint64_t inv[5] = {UINT64_C(0x2), UINT64_C(0), UINT64_C(0x6), UINT64_C(0x4), UINT64_C(0)};
+        uint64_t outv[4] = {0};
+        if (!flow_ir_eval_u64(&prog, inv, outv) || outv[0] != UINT64_C(0x2) ||
+            outv[1] != UINT64_C(0)) {
+            fails++;
+        }
+    }
+    /* Valid grant on slot 2 + linear rescission consumption on slot 2 */
+    {
+        uint64_t inv_a[5] = {UINT64_C(0x2), UINT64_C(0), UINT64_C(0x6), UINT64_C(0), UINT64_C(0)};
+        uint64_t out_a[4] = {0};
+        if (!flow_ir_eval_u64(&prog, inv_a, out_a) || out_a[0] != UINT64_C(0x6) ||
+            out_a[2] != UINT64_C(0x4)) {
+            fails++;
+        }
+        uint64_t inv_b[5] = {UINT64_C(0x6), UINT64_C(0), UINT64_C(0x6), UINT64_C(0), UINT64_C(0x4)};
+        uint64_t out_b[4] = {0};
+        if (!flow_ir_eval_u64(&prog, inv_b, out_b) || out_b[0] != UINT64_C(0x2) ||
+            out_b[2] != UINT64_C(0)) {
+            fails++;
+        }
+    }
+
+    /* 2. Nixon Diamond repaired via SEARU lifted with SOUND_FIR_FLAG_USE_REPAIRED */
+    sound_arena_init(&arena);
+    arena.map.img_hdr.num_nodes = 2U;
+    sound_set_node(&arena, 0U, "quaker", SOUND_SORT_NORMATIVE, SOUND_EVID_ENACTED_NORM,
+                   SOUND_ASPECT_STATE, false, false, false, UINT64_C(0), UINT64_C(2), 1U,
+                   UINT64_C(0), UINT64_C(0));
+    sound_set_node(&arena, 1U, "republican", SOUND_SORT_NORMATIVE, SOUND_EVID_ENACTED_NORM,
+                   SOUND_ASPECT_STATE, false, false, false, UINT64_C(0), UINT64_C(1), 1U,
+                   UINT64_C(0), UINT64_C(0));
+    if (sound_searu_repair_conflict(&arena, UINT64_C(0x53454152555F3031), 1024U) != SOUND_OK ||
+        sound_lift_to_fir(&arena, "nixon_repaired", SOUND_FIR_FLAG_USE_REPAIRED, fir_buf,
+                          sizeof(fir_buf), &fir_len) != SOUND_OK ||
+        !flow_ir_load_bytes(&prog, fir_buf, fir_len) || !flow_ir_admits_unitary(&prog)) {
+        fails++;
+    } else {
+        uint64_t inv[5] = {0};
+        uint64_t outv[4] = {0};
+        if (!flow_ir_eval_u64(&prog, inv, outv) ||
+            outv[3] != arena.map.searu_repair.candidate_mask) {
+            fails++;
+        }
+    }
+
+    return fails;
+}
+
 static bool sound_load_arena_file(const char *path, SoundArena *arena) {
     static uint8_t raw[SOUND_ARENA_BYTES + 1U];
     FILE *fp = fopen(path, "rb");
@@ -583,6 +684,50 @@ static bool sound_load_arena_file(const char *path, SoundArena *arena) {
     return true;
 }
 
+static bool sound_save_bin_file(const char *path, const uint8_t *buf, size_t len) {
+    FILE *fp = fopen(path, "wb");
+    if (fp == NULL) {
+        return false;
+    }
+    size_t wr = fwrite(buf, 1U, len, fp);
+    int err = ferror(fp);
+    int cls = fclose(fp);
+    return (err == 0) && (cls == 0) && (wr == len);
+}
+
+static void sound_derive_prog_name(char dst[24], const char *path) {
+    const char *base = path;
+    if (path != NULL) {
+        for (size_t i = 0U; path[i] != '\0'; i++) {
+            if (path[i] == '/' || path[i] == '\\') {
+                base = &path[i + 1U];
+            }
+        }
+    }
+    size_t len = 0U;
+    if (base != NULL) {
+        while (base[len] != '\0') {
+            len++;
+        }
+    }
+    if (len > 4U && base[len - 4U] == '.' && base[len - 3U] == 's' && base[len - 2U] == 'n' &&
+        base[len - 1U] == 'd') {
+        len -= 4U;
+    }
+    size_t out_i = 0U;
+    while (out_i < 23U && out_i < len) {
+        dst[out_i] = base[out_i];
+        out_i++;
+    }
+    dst[out_i] = '\0';
+    if (out_i == 0U) {
+        static const char k_fallback[] = "sound_auth_gate";
+        for (size_t i = 0U; i < sizeof(k_fallback); i++) {
+            dst[i] = k_fallback[i];
+        }
+    }
+}
+
 static SoundArena g_cli_arena;
 
 static int sound_cmd_selftest(void) {
@@ -592,11 +737,13 @@ static int sound_cmd_selftest(void) {
     uint32_t f4 = sound_test_t4_arena_merkle();
     uint32_t f5 = sound_test_t5_searu_repair();
     uint32_t f6 = sound_test_t6_fuzz_4096();
-    uint32_t tot = f1 + f2 + f3 + f4 + f5 + f6;
+    uint32_t f7 = sound_test_t7_fir_lift();
+    uint32_t tot = f1 + f2 + f3 + f4 + f5 + f6 + f7;
     printf(
-        "[selftest] T1(kernel)=%s T2(hohfeld)=%s T3(gate)=%s T4(arena)=%s T5(searu)=%s T6(fuzz4096)=%s | fails=%u\n",
+        "[selftest] T1(kernel)=%s T2(hohfeld)=%s T3(gate)=%s T4(arena)=%s T5(searu)=%s T6(fuzz4096)=%s T7(fir)=%s | fails=%u\n",
         f1 == 0U ? "PASS" : "FAIL", f2 == 0U ? "PASS" : "FAIL", f3 == 0U ? "PASS" : "FAIL",
-        f4 == 0U ? "PASS" : "FAIL", f5 == 0U ? "PASS" : "FAIL", f6 == 0U ? "PASS" : "FAIL", tot);
+        f4 == 0U ? "PASS" : "FAIL", f5 == 0U ? "PASS" : "FAIL", f6 == 0U ? "PASS" : "FAIL",
+        f7 == 0U ? "PASS" : "FAIL", tot);
     return (tot == 0U) ? 0 : 1;
 }
 
@@ -665,10 +812,76 @@ static int sound_cmd_repair(const char *path, const char *seed_str) {
     return (g_cli_arena.map.searu_repair.converged == UINT32_C(1)) ? 0 : 1;
 }
 
+static int sound_cmd_lift_fir(int argc, char **argv) {
+    const char *in_path = argv[2];
+    const char *out_path = argv[3];
+    bool use_repaired = false;
+    uint64_t seed = UINT64_C(0x53454152555F3031);
+    if (argc >= 5) {
+        if (!sound_cstr_eq(argv[4], "--repaired")) {
+            fprintf(stderr, "ERROR: unknown option '%s'\n", argv[4]);
+            return 1;
+        }
+        use_repaired = true;
+        if (argc >= 6 && !sound_parse_u64(argv[5], &seed)) {
+            fprintf(stderr, "ERROR: invalid seed '%s'\n", argv[5]);
+            return 1;
+        }
+    }
+    if (!sound_load_arena_file(in_path, &g_cli_arena)) {
+        fprintf(stderr, "ERROR: unable to read 16,384B SoundArena '%s'\n", in_path);
+        return 1;
+    }
+    sound_err_t rc = sound_arena_verify(&g_cli_arena);
+    if (rc != SOUND_OK) {
+        fprintf(stderr, "ERROR: SoundArena verify failed on '%s' (err=%u)\n", in_path,
+                (unsigned)rc);
+        return 1;
+    }
+    rc = use_repaired ? sound_searu_repair_conflict(&g_cli_arena, seed, 2048U)
+                      : sound_eval(&g_cli_arena);
+    if (rc != SOUND_OK || !sound_eval_flags_ok(&g_cli_arena)) {
+        fprintf(stderr, "ERROR: Kernel invariant violation on '%s'\n", in_path);
+        return 1;
+    }
+
+    char prog_name[24];
+    sound_derive_prog_name(prog_name, in_path);
+    uint8_t fir_buf[SOUND_FIR_BYTES];
+    size_t fir_len = 0U;
+    uint32_t fir_flags = use_repaired ? SOUND_FIR_FLAG_USE_REPAIRED : UINT32_C(0);
+    rc = sound_lift_to_fir(&g_cli_arena, prog_name, fir_flags, fir_buf, sizeof(fir_buf), &fir_len);
+    if (rc != SOUND_OK) {
+        fprintf(stderr, "ERROR: lift-fir failed on '%s' (err=%u)\n", in_path, (unsigned)rc);
+        return 1;
+    }
+
+    flow_ir_prog_t prog;
+    flow_ir_dag_stats_t dag;
+    if (!flow_ir_load_bytes(&prog, fir_buf, fir_len) || !flow_ir_validate(&prog) ||
+        !flow_ir_admits_unitary(&prog) || !flow_ir_analyze_dag(&prog, &dag)) {
+        fprintf(stderr, "ERROR: lifted FIR1 failed FLOW_IR unitary/DAG audit\n");
+        return 1;
+    }
+    if (!sound_save_bin_file(out_path, fir_buf, fir_len)) {
+        fprintf(stderr, "ERROR: unable to write '%s'\n", out_path);
+        return 1;
+    }
+
+    uint64_t active_mask = use_repaired ? g_cli_arena.map.searu_repair.candidate_mask
+                                        : g_cli_arena.map.eval_out.established_mask;
+    printf(
+        "[lift-fir] %s -> %s (%zuB, name=%s, active=0x%016llx) | mult_bits=%u mult_depth=%u unitary=OK\n",
+        in_path, out_path, fir_len, prog.name, (unsigned long long)active_mask, dag.mult_bits,
+        dag.mult_depth);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Usage:\n  sound selftest\n  sound verify <arena.snd>\n"
-                        "  sound repair <arena.snd> [seed]\n");
+                        "  sound repair <arena.snd> [seed]\n"
+                        "  sound lift-fir <arena.snd> <out.fir> [--repaired [seed]]\n");
         return 1;
     }
     if (sound_cstr_eq(argv[1], "selftest")) {
@@ -679,6 +892,9 @@ int main(int argc, char **argv) {
     }
     if (sound_cstr_eq(argv[1], "repair") && argc >= 3) {
         return sound_cmd_repair(argv[2], (argc >= 4) ? argv[3] : NULL);
+    }
+    if (sound_cstr_eq(argv[1], "lift-fir") && argc >= 4) {
+        return sound_cmd_lift_fir(argc, argv);
     }
     fprintf(stderr, "ERROR: invalid arguments\n");
     return 1;

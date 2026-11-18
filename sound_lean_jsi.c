@@ -6,11 +6,12 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "flow_ir.h"
 #include "sound.h"
 
 /*
  * ============================================================================
- * SOUND v2.0.0 — Zero-Copy Lean 4 Dynamic Plugin JSI Bridge (0 `lean -c`)
+ * SOUND v2.1.0 — Zero-Copy Lean 4 Dynamic Plugin JSI Bridge (0 `lean -c`)
  * ============================================================================
  * Linked ONLY into `build/libsound_jsi.{dylib,so}` for elaboration-time
  * `#eval Sound.compileTimeBoundaryGate`. Never linked into `libsound.a` or
@@ -23,6 +24,8 @@ LEAN_EXPORT lean_obj_res sound_jsi_verify_arena_bytes(b_lean_obj_arg raw, uint64
                                                       uint64_t exp_est, uint64_t exp_def,
                                                       uint64_t exp_conf, uint64_t exp_pen);
 LEAN_EXPORT lean_obj_res sound_jsi_verify_searu_repair(b_lean_obj_arg raw, uint64_t seed);
+LEAN_EXPORT lean_obj_res sound_jsi_verify_fir_lift(b_lean_obj_arg raw_arena, b_lean_obj_arg exp_fir,
+                                                   b_lean_obj_arg prog_name);
 LEAN_EXPORT lean_obj_res sound_jsi_verify_core_suites(uint64_t seed);
 LEAN_EXPORT lean_obj_res l_Sound_verifyArenaBytes___boxed(lean_obj_arg raw, lean_obj_arg exp_nm,
                                                           lean_obj_arg exp_i, lean_obj_arg exp_p,
@@ -32,6 +35,8 @@ LEAN_EXPORT lean_obj_res l_Sound_verifyArenaBytes___boxed(lean_obj_arg raw, lean
                                                           lean_obj_arg exp_pen, lean_obj_arg world);
 LEAN_EXPORT lean_obj_res l_Sound_verifySearuRepair___boxed(lean_obj_arg raw, lean_obj_arg seed,
                                                            lean_obj_arg world);
+LEAN_EXPORT lean_obj_res l_Sound_verifyFirLift___boxed(lean_obj_arg raw_arena, lean_obj_arg exp_fir,
+                                                       lean_obj_arg prog_name, lean_obj_arg world);
 LEAN_EXPORT lean_obj_res l_Sound_verifyCoreSuites___boxed(lean_obj_arg seed, lean_obj_arg world);
 
 typedef struct {
@@ -171,6 +176,90 @@ LEAN_EXPORT lean_obj_res sound_jsi_verify_searu_repair(b_lean_obj_arg raw, uint6
             }
         }
     }
+    return lean_io_result_mk_ok(lean_box(1));
+}
+
+LEAN_EXPORT lean_obj_res sound_jsi_verify_fir_lift(b_lean_obj_arg raw_arena, b_lean_obj_arg exp_fir,
+                                                   b_lean_obj_arg prog_name) {
+    SoundArena arena;
+    if (!sound_jsi_load_arena(raw_arena, &arena)) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+    if (sound_arena_verify(&arena) != SOUND_OK || sound_eval(&arena) != SOUND_OK) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+    const char *pname = lean_string_cstr(prog_name);
+    uint8_t fir_buf[SOUND_FIR_BYTES];
+    size_t fir_len = 0U;
+    if (sound_lift_to_fir(&arena, pname, UINT32_C(0), fir_buf, sizeof(fir_buf), &fir_len) !=
+            SOUND_OK ||
+        fir_len != (size_t)SOUND_FIR_BYTES) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+    if (lean_sarray_size(exp_fir) != (size_t)SOUND_FIR_BYTES) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+    const uint8_t *exp_ptr = lean_sarray_cptr((lean_object *)exp_fir);
+    if (exp_ptr == NULL || memcmp(fir_buf, exp_ptr, (size_t)SOUND_FIR_BYTES) != 0) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+
+    flow_ir_prog_t prog;
+    flow_ir_dag_stats_t dag;
+    if (!flow_ir_load_bytes(&prog, fir_buf, fir_len) || !flow_ir_validate(&prog) ||
+        !flow_ir_admits_unitary(&prog) || !flow_ir_analyze_dag(&prog, &dag)) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+
+    uint64_t imm = arena.map.norm.immunity_mask;
+    uint64_t pow = arena.map.norm.power_mask;
+    uint64_t mut_m = pow & (~imm);
+    uint64_t resc_m = arena.map.norm.rescission_power_mask & (~imm);
+    uint64_t est = arena.map.eval_out.established_mask;
+    uint64_t no_pow = ~pow;
+
+    /* Vector 1: Immunity (KanLock) tamper stays pinned */
+    {
+        uint64_t inv[5] = {imm, UINT64_C(0), UINT64_C(0), UINT64_C(0), imm};
+        uint64_t outv[4] = {0};
+        if (!flow_ir_eval_u64(&prog, inv, outv) || (outv[0] & imm) != imm ||
+            (outv[1] & imm) != UINT64_C(0)) {
+            return lean_io_result_mk_ok(lean_box(0));
+        }
+    }
+    /* Vector 2: No-Power slots cannot mutate */
+    {
+        uint64_t inv[5] = {UINT64_C(0), UINT64_C(0), no_pow, UINT64_C(0), UINT64_C(0)};
+        uint64_t outv[4] = {0};
+        if (!flow_ir_eval_u64(&prog, inv, outv) || (outv[0] & no_pow) != UINT64_C(0)) {
+            return lean_io_result_mk_ok(lean_box(0));
+        }
+    }
+    /* Vector 3: Contradictory duty request rolls back cleanly */
+    {
+        uint64_t inv[5] = {UINT64_C(0), UINT64_C(0), mut_m, mut_m, UINT64_C(0)};
+        uint64_t outv[4] = {0};
+        if (!flow_ir_eval_u64(&prog, inv, outv) || outv[0] != UINT64_C(0) ||
+            outv[1] != UINT64_C(0)) {
+            return lean_io_result_mk_ok(lean_box(0));
+        }
+    }
+    /* Vector 4: Valid potestative update + QTT linear rescission consumption */
+    {
+        uint64_t inv_a[5] = {UINT64_C(0), UINT64_C(0), mut_m, UINT64_C(0), UINT64_C(0)};
+        uint64_t out_a[4] = {0};
+        if (!flow_ir_eval_u64(&prog, inv_a, out_a) || out_a[0] != mut_m ||
+            out_a[1] != UINT64_C(0) || out_a[2] != resc_m || out_a[3] != est) {
+            return lean_io_result_mk_ok(lean_box(0));
+        }
+        uint64_t inv_b[5] = {mut_m | imm, UINT64_C(0), mut_m | imm, UINT64_C(0), resc_m | imm};
+        uint64_t out_b[4] = {0};
+        if (!flow_ir_eval_u64(&prog, inv_b, out_b) || out_b[0] != ((mut_m | imm) & (~resc_m)) ||
+            out_b[2] != UINT64_C(0) || out_b[3] != est) {
+            return lean_io_result_mk_ok(lean_box(0));
+        }
+    }
+
     return lean_io_result_mk_ok(lean_box(1));
 }
 
@@ -370,6 +459,16 @@ LEAN_EXPORT lean_obj_res l_Sound_verifySearuRepair___boxed(lean_obj_arg raw, lea
     lean_obj_res r = sound_jsi_verify_searu_repair(raw, useed);
     lean_dec(raw);
     lean_dec(seed);
+    return r;
+}
+
+LEAN_EXPORT lean_obj_res l_Sound_verifyFirLift___boxed(lean_obj_arg raw_arena, lean_obj_arg exp_fir,
+                                                       lean_obj_arg prog_name, lean_obj_arg world) {
+    (void)world;
+    lean_obj_res r = sound_jsi_verify_fir_lift(raw_arena, exp_fir, prog_name);
+    lean_dec(raw_arena);
+    lean_dec(exp_fir);
+    lean_dec(prog_name);
     return r;
 }
 

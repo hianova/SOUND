@@ -14,7 +14,7 @@ extern "C" {
 #endif
 
 /* ============================================================================
- * SOUND v2.0.0 — Formal Epistemic & Normative Soundness Kernel (Pure GPR C17)
+ * SOUND v2.1.0 — Formal Epistemic & Normative Soundness Kernel (Pure GPR C17)
  * ============================================================================
  * FLOW v8.0.0 SSOT Substrate over a sealed 16,384B (256 x 64B) `SoundArena`:
  *   - Zero heap allocation, zero floating-point, zero indirect calls (`blr`/`br`),
@@ -24,6 +24,7 @@ extern "C" {
  *   - Layer 1: Monotone Physical Log (`PhysLog`) + Hohfeld `Immunity` KanLock
  *   - Layer 2: 64-Node 4-Valued Bilattice Alternating-Fixpoint Kernel (Γ / Γ²)
  *   - SEARU  : KanLock-pinned Pure-GPR maximal conflict-free extension repair
+ *   - FIR1   : Pure-GPR `.snd -> .fir` QTT linear authority gate lifter
  * ============================================================================ */
 
 #define SOUND_MAGIC                      UINT32_C(0x32444E53) /* "SND2" */
@@ -39,6 +40,10 @@ extern "C" {
 #define SOUND_EVAL_FLAG_CONFLICT_FREE_OK (UINT32_C(1) << 1)
 #define SOUND_EVAL_FLAG_HOHFELD_OK       (UINT32_C(1) << 2)
 #define SOUND_EVAL_FLAG_FIXPOINT_OK      (UINT32_C(1) << 3)
+#define SOUND_FIR_MAGIC                  UINT32_C(0x31524946) /* "FIR1" */
+#define SOUND_FIR_VERSION                UINT32_C(1)
+#define SOUND_FIR_BYTES                  2144U
+#define SOUND_FIR_FLAG_USE_REPAIRED      (UINT32_C(1) << 0)
 
 FLOW_SCHEMA_STATIC_ASSERT(sizeof(SoundArena) == SOUND_ARENA_BYTES,
                           "SoundArena must occupy exactly 16,384 bytes");
@@ -151,6 +156,11 @@ static inline uint64_t sound_fnv1a_bytes(uint64_t seed, const uint8_t *data, siz
     return h;
 }
 
+static inline void sound_write_le16(uint8_t *p, uint16_t v) {
+    p[0] = (uint8_t)(v & UINT16_C(0xFF));
+    p[1] = (uint8_t)((v >> 8U) & UINT16_C(0xFF));
+}
+
 static inline void sound_write_le32(uint8_t *p, uint32_t v) {
     p[0] = (uint8_t)(v & UINT32_C(0xFF));
     p[1] = (uint8_t)((v >> 8U) & UINT32_C(0xFF));
@@ -161,6 +171,20 @@ static inline void sound_write_le32(uint8_t *p, uint32_t v) {
 static inline void sound_write_le64(uint8_t *p, uint64_t v) {
     sound_write_le32(p, (uint32_t)(v & UINT64_C(0xFFFFFFFF)));
     sound_write_le32(p + 4U, (uint32_t)((v >> 32U) & UINT64_C(0xFFFFFFFF)));
+}
+
+static inline void sound_write_fixed_ascii24(uint8_t dst[24], const char *src) {
+    size_t i = 0U;
+    if (src != NULL) {
+        while (i < 23U && src[i] != '\0') {
+            dst[i] = (uint8_t)src[i];
+            i++;
+        }
+    }
+    while (i < 24U) {
+        dst[i] = 0U;
+        i++;
+    }
 }
 
 static inline void sound_arena_init(SoundArena *arena) {
@@ -742,6 +766,112 @@ static inline sound_err_t sound_searu_repair_conflict(SoundArena *arena, uint64_
     return SOUND_OK;
 }
 
+typedef struct {
+    uint16_t kind;
+    uint16_t num_ins;
+    uint16_t width;
+    uint32_t ins[3];
+    const char *name;
+} sound__fir_op_desc_t;
+
+static inline sound_err_t sound_lift_to_fir(const SoundArena *arena, const char *prog_name,
+                                            uint32_t fir_flags, uint8_t *out_buf, size_t out_cap,
+                                            size_t *out_len) {
+    if (arena == NULL || out_buf == NULL || out_len == NULL) {
+        return SOUND_ERR_NULL;
+    }
+    if (out_cap < (size_t)SOUND_FIR_BYTES) {
+        return SOUND_ERR_BOUNDS;
+    }
+    uint32_t req_flags = SOUND_EVAL_FLAG_PARTITION_OK | SOUND_EVAL_FLAG_CONFLICT_FREE_OK |
+                         SOUND_EVAL_FLAG_HOHFELD_OK | SOUND_EVAL_FLAG_FIXPOINT_OK;
+    if ((arena->map.eval_out.eval_flags & req_flags) != req_flags ||
+        !sound_hohfeld_coherent(arena)) {
+        return SOUND_ERR_INCOHERENT;
+    }
+    uint64_t active_mask = arena->map.eval_out.established_mask;
+    if ((fir_flags & SOUND_FIR_FLAG_USE_REPAIRED) != UINT32_C(0)) {
+        if (arena->map.searu_repair.converged != UINT32_C(1) ||
+            arena->map.searu_repair.best_energy != UINT64_C(0)) {
+            return SOUND_ERR_INCOHERENT;
+        }
+        active_mask = arena->map.searu_repair.candidate_mask;
+    }
+
+    uint64_t mutable_mask = arena->map.norm.power_mask & (~arena->map.norm.immunity_mask);
+    uint64_t resc_mask = arena->map.norm.rescission_power_mask & (~arena->map.norm.immunity_mask);
+    const char *effective_name =
+        (prog_name != NULL && prog_name[0] != '\0') ? prog_name : "sound_auth_gate";
+
+    static const char *const k_in_names[5] = {"cur_pos", "cur_neg", "req_pos", "req_neg",
+                                              "ex_resc"};
+    static const uint32_t k_outputs[4] = {22U, 17U, 19U, 6U};
+    static const sound__fir_op_desc_t k_ops[18] = {
+        {1U, 0U, 64U, {0U, 0U, 0U}, "k_mut"},       {1U, 0U, 64U, {0U, 0U, 0U}, "k_est"},
+        {1U, 0U, 64U, {0U, 0U, 0U}, "k_resc"},      {4U, 2U, 64U, {2U, 0U, 0U}, "diff_pos"},
+        {5U, 2U, 64U, {8U, 5U, 0U}, "step_pos"},    {4U, 2U, 64U, {0U, 9U, 0U}, "cand_pos"},
+        {4U, 2U, 64U, {3U, 1U, 0U}, "diff_neg"},    {5U, 2U, 64U, {11U, 5U, 0U}, "step_neg"},
+        {4U, 2U, 64U, {1U, 12U, 0U}, "cand_neg"},   {5U, 2U, 64U, {10U, 13U, 0U}, "clash"},
+        {18U, 1U, 1U, {14U, 0U, 0U}, "coh_ok"},     {15U, 3U, 64U, {15U, 0U, 10U}, "next_pos"},
+        {15U, 3U, 64U, {15U, 1U, 13U}, "next_neg"}, {6U, 1U, 64U, {4U, 0U, 0U}, "not_ex"},
+        {5U, 2U, 64U, {7U, 18U, 0U}, "next_resc"},  {5U, 2U, 64U, {7U, 4U, 0U}, "fired_resc"},
+        {6U, 1U, 64U, {20U, 0U, 0U}, "not_fired"},  {5U, 2U, 64U, {16U, 21U, 0U}, "final_pos"}};
+
+    sound_zero_bytes(out_buf, (size_t)SOUND_FIR_BYTES);
+    sound_write_le32(out_buf + 0U, SOUND_FIR_MAGIC);
+    sound_write_le32(out_buf + 4U, SOUND_FIR_VERSION);
+    sound_write_le32(out_buf + 8U, UINT32_C(1));  /* FLOW_IR_MULT_LINEAR */
+    sound_write_le32(out_buf + 12U, UINT32_C(1)); /* cleanAnc = true */
+    sound_write_le32(out_buf + 16U, UINT32_C(23));
+    sound_write_le32(out_buf + 20U, UINT32_C(5));
+    sound_write_le32(out_buf + 24U, UINT32_C(4));
+    sound_write_le32(out_buf + 28U, UINT32_C(18));
+    sound_write_le32(out_buf + 32U, UINT32_C(0));
+    sound_write_le32(out_buf + 36U, UINT32_C(0));
+    sound_write_fixed_ascii24(out_buf + 40U, effective_name);
+
+    size_t off = 64U;
+    for (uint32_t i = 0U; i < 5U; i++) {
+        sound_write_le16(out_buf + off, UINT16_C(64));
+        sound_write_fixed_ascii24(out_buf + off + 8U, k_in_names[i]);
+        off += 32U;
+    }
+    for (uint32_t i = 0U; i < 18U; i++) {
+        sound_write_le16(out_buf + off, k_ops[i].width);
+        sound_write_fixed_ascii24(out_buf + off + 8U, k_ops[i].name);
+        off += 32U;
+    }
+
+    for (uint32_t i = 0U; i < 5U; i++) {
+        sound_write_le32(out_buf + off + ((size_t)i * 4U), i);
+    }
+    off += 24U; /* 5 inputs padded to 8-byte multiple */
+
+    for (uint32_t i = 0U; i < 4U; i++) {
+        sound_write_le32(out_buf + off + ((size_t)i * 4U), k_outputs[i]);
+    }
+    off += 16U;
+
+    const uint64_t k_consts[3] = {mutable_mask, active_mask, resc_mask};
+    for (uint32_t i = 0U; i < 18U; i++) {
+        uint8_t *opr = out_buf + off;
+        sound_write_le16(opr + 0U, k_ops[i].kind);
+        sound_write_le16(opr + 2U, k_ops[i].num_ins);
+        sound_write_le32(opr + 4U, 5U + i);
+        for (uint16_t j = 0U; j < k_ops[i].num_ins; j++) {
+            sound_write_le32(opr + 8U + ((size_t)j * 4U), k_ops[i].ins[j]);
+        }
+        uint64_t p0 = (i < 3U) ? k_consts[i] : UINT64_C(0);
+        sound_write_le64(opr + 40U, p0);
+        off += 72U;
+    }
+
+    uint64_t trailer = sound_fnv1a_bytes(SOUND_FNV1A_OFFSET, out_buf, off);
+    sound_write_le64(out_buf + off, trailer);
+    *out_len = off + 8U;
+    return SOUND_OK;
+}
+
 #ifdef SOUND_EXPORT_RING0
 sound_err_t sound_ring0_eval(SoundArena *arena);
 sound_err_t sound_ring0_apply_potestative(SoundArena *arena, uint32_t slot, bool grant_pos,
@@ -755,6 +885,9 @@ sound_forest_verdict_t sound_ring0_admit_forest(SoundArena *arena, uint32_t *adm
 sound_err_t sound_ring0_searu_repair(SoundArena *arena, uint64_t seed, uint32_t max_iters);
 void sound_ring0_arena_seal(SoundArena *arena);
 sound_err_t sound_ring0_arena_verify(const SoundArena *arena);
+sound_err_t sound_ring0_lift_to_fir(const SoundArena *arena, const char *prog_name,
+                                    uint32_t fir_flags, uint8_t *out_buf, size_t out_cap,
+                                    size_t *out_len);
 
 sound_err_t sound_ring0_eval(SoundArena *arena) {
     return sound_eval(arena);
@@ -791,6 +924,12 @@ void sound_ring0_arena_seal(SoundArena *arena) {
 
 sound_err_t sound_ring0_arena_verify(const SoundArena *arena) {
     return sound_arena_verify(arena);
+}
+
+sound_err_t sound_ring0_lift_to_fir(const SoundArena *arena, const char *prog_name,
+                                    uint32_t fir_flags, uint8_t *out_buf, size_t out_cap,
+                                    size_t *out_len) {
+    return sound_lift_to_fir(arena, prog_name, fir_flags, out_buf, out_cap, out_len);
 }
 #endif
 

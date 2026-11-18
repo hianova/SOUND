@@ -13,7 +13,7 @@ import Flow
 
 namespace Sound
 
-def version       : String := "2.0.0"
+def version       : String := "2.1.0"
 def cellBytes     : Nat    := 64
 def arenaCells    : Nat    := 256
 def arenaBytes    : Nat    := arenaCells * cellBytes
@@ -379,7 +379,37 @@ def goldenCases : List GoldenCase :=
         , { id := 2, label := "excess_force_rebut", sort := .normative, source := .enactedNorm, aspect := .state } ] }
   ]
 
-/-! ## Part 3: Elaboration-Time Lean 4 <-> C17 JSI Boundary Gate -/
+/-! ## Part 3: Pure QTT Linear `.fir` Authority Gate Lifter (`SoundArena -> FIR1`) -/
+
+def buildAuthorityFir (name : String) (mutableMask activeMask rescMask : UInt64) :
+    Flow.Morphism.Graph :=
+  let b0 := Flow.Morphism.Builder.init name .linear true
+  let (b1, curPos)    := b0.input "cur_pos" 64
+  let (b2, curNeg)    := b1.input "cur_neg" 64
+  let (b3, reqPos)    := b2.input "req_pos" 64
+  let (b4, reqNeg)    := b3.input "req_neg" 64
+  let (b5, exResc)    := b4.input "ex_resc" 64
+  let (b6, _)         := b5.constU64 "k_mut" 64 mutableMask
+  let (b7, kEst)      := b6.constU64 "k_est" 64 activeMask
+  let (b8, kResc)     := b7.constU64 "k_resc" 64 rescMask
+  let (b9, diffPos)   := b8.xorVec "diff_pos" 64 reqPos curPos
+  let (b10, stepPos)  := b9.andVec "step_pos" 64 diffPos 5
+  let (b11, candPos)  := b10.xorVec "cand_pos" 64 curPos stepPos
+  let (b12, diffNeg)  := b11.xorVec "diff_neg" 64 reqNeg curNeg
+  let (b13, stepNeg)  := b12.andVec "step_neg" 64 diffNeg 5
+  let (b14, candNeg)  := b13.xorVec "cand_neg" 64 curNeg stepNeg
+  let (b15, clash)    := b14.andVec "clash" 64 candPos candNeg
+  let (b16, cohOk)    := b15.eqZero "coh_ok" clash
+  let (b17, nextPos)  := b16.ctrlSel "next_pos" 64 cohOk curPos candPos
+  let (b18, nextNeg)  := b17.ctrlSel "next_neg" 64 cohOk curNeg candNeg
+  let (b19, notEx)    := b18.notVec "not_ex" 64 exResc
+  let (b20, nextResc) := b19.andVec "next_resc" 64 kResc notEx
+  let (b21, firedR)   := b20.andVec "fired_resc" 64 kResc exResc
+  let (b22, notFired) := b21.notVec "not_fired" 64 firedR
+  let (b23, finalPos) := b22.andVec "final_pos" 64 nextPos notFired
+  b23.build [finalPos, nextNeg, nextResc, kEst]
+
+/-! ## Part 4: Elaboration-Time Lean 4 <-> C17 JSI Boundary Gate -/
 
 @[extern "sound_jsi_verify_arena_bytes"]
 opaque verifyArenaBytes (raw : @& ByteArray)
@@ -387,6 +417,10 @@ opaque verifyArenaBytes (raw : @& ByteArray)
 
 @[extern "sound_jsi_verify_searu_repair"]
 opaque verifySearuRepair (raw : @& ByteArray) (seed : UInt64) : IO Bool
+
+@[extern "sound_jsi_verify_fir_lift"]
+opaque verifyFirLift (rawArena : @& ByteArray) (expFir : @& ByteArray)
+    (progName : @& String) : IO Bool
 
 @[extern "sound_jsi_verify_core_suites"]
 opaque verifyCoreSuites (seed : UInt64) : IO Bool
@@ -411,12 +445,24 @@ def compileTimeBoundaryGate : IO Unit := do
         let (nm, iStar, pStar, est, defM, conf, pen) := Flow.Bilattice.statusMasks leafThreshold bNodes
         let parityOk ← verifyArenaBytes bin nm iStar pStar est defM conf pen
         requireGate s!"Lean4<->C17 16KB Arena parity ({gc.name})" parityOk
+        let mutMask := gc.slots.powerMask &&& (~~~gc.slots.immunityMask)
+        let rescMask := gc.slots.rescissionPowerMask &&& (~~~gc.slots.immunityMask)
+        let fir? := Flow.Morphism.encodeFir (buildAuthorityFir gc.name mutMask est rescMask)
+        match fir? with
+        | none =>
+            requireGate s!"encodeFir {gc.name}" false
+        | some expFir =>
+            requireGate s!"{gc.name} exact 2,144B FIR1" (expFir.size == 2144)
+            let firOk ← verifyFirLift bin expFir gc.name
+            requireGate s!"Lean4<->C17 FIR1 lift & eval ({gc.name})" firOk
+            if gc.name == "case3_park" || gc.name == "case2_auction_pre" then
+              IO.FS.writeBinFile s!"build/{gc.name}.fir" expFir
         if gc.name == "nixon_diamond" || gc.name == "case3_park" then
           let searuOk ← verifySearuRepair bin 0x53454152555F3230
           requireGate s!"SEARU KanLock conflict repair ({gc.name})" searuOk
         IO.FS.writeBinFile s!"build/{gc.name}.snd" bin
   let suitesOk ← verifyCoreSuites 0x534F554E445F4655
   requireGate "C17 Layer 0/1/2 + Arena tamper + 4,096-graph fuzz suites" suitesOk
-  IO.println s!"[SOUND-JSI-GATE] PASS: {goldenCases.length} x 16KB SND2 bundles + SEARU + 4,096-graph fuzz"
+  IO.println s!"[SOUND-JSI-GATE] PASS: {goldenCases.length} x (16KB SND2 + 2,144B FIR1) + SEARU + 4,096-graph fuzz"
 
 end Sound

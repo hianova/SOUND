@@ -139,10 +139,13 @@ fmt-check:
 	@echo "  [PASS] clang-format clean"
 
 test: all
-	@echo "=== [Gate 5a] Standalone Pure-GPR CLI Self-Test, Verify & SEARU Repair ==="
+	@echo "=== [Gate 5a] Standalone Pure-GPR CLI Self-Test, Verify, Repair & FIR1 Lift ==="
 	./$(BUILD_DIR)/sound selftest
 	./$(BUILD_DIR)/sound verify $(BUILD_DIR)/case3_park.snd
 	./$(BUILD_DIR)/sound repair $(BUILD_DIR)/nixon_diamond.snd
+	./$(BUILD_DIR)/sound lift-fir $(BUILD_DIR)/case3_park.snd $(BUILD_DIR)/case3_park_cli.fir
+	cmp -s $(BUILD_DIR)/case3_park.fir $(BUILD_DIR)/case3_park_cli.fir
+	./$(BUILD_DIR)/sound lift-fir $(BUILD_DIR)/nixon_diamond.snd $(BUILD_DIR)/nixon_repaired.fir --repaired
 
 verify: test fmt-check
 	@echo "=== ALL SOUND v$(SOUND_VER) GATES PASSED ==="
