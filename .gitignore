@@ -1,0 +1,15 @@
+# Build & verification outputs
+build/
+*.olean
+*.o
+*.a
+*.so
+*.dylib
+*.snd
+
+# OS, Python & editor metadata
+.DS_Store
+.obsidian/
+.agents/
+__pycache__/
+*.pyc
