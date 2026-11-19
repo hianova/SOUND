@@ -7,6 +7,7 @@
 
 #include "flow.h"
 #include "searu.h"
+#include "flow_ir_wire.h"
 #include "sound_schema_abi.h"
 
 #ifdef __cplusplus
@@ -40,10 +41,10 @@ extern "C" {
 #define SOUND_EVAL_FLAG_CONFLICT_FREE_OK (UINT32_C(1) << 1)
 #define SOUND_EVAL_FLAG_HOHFELD_OK       (UINT32_C(1) << 2)
 #define SOUND_EVAL_FLAG_FIXPOINT_OK      (UINT32_C(1) << 3)
-#define SOUND_FIR_MAGIC                  UINT32_C(0x31524946) /* "FIR1" */
-#define SOUND_FIR_VERSION                UINT32_C(1)
-#define SOUND_FIR_BYTES                  2144U
+#define SOUND_FIR_BYTES                  FLOW_IR_WIRE_BYTES(23U, 5U, 4U, 18U, 0U)
 #define SOUND_FIR_FLAG_USE_REPAIRED      (UINT32_C(1) << 0)
+
+FLOW_SCHEMA_STATIC_ASSERT(SOUND_FIR_BYTES == 2144U, "SOUND FIR1 size mismatch");
 
 FLOW_SCHEMA_STATIC_ASSERT(sizeof(SoundArena) == SOUND_ARENA_BYTES,
                           "SoundArena must occupy exactly 16,384 bytes");
@@ -156,11 +157,6 @@ static inline uint64_t sound_fnv1a_bytes(uint64_t seed, const uint8_t *data, siz
     return h;
 }
 
-static inline void sound_write_le16(uint8_t *p, uint16_t v) {
-    p[0] = (uint8_t)(v & UINT16_C(0xFF));
-    p[1] = (uint8_t)((v >> 8U) & UINT16_C(0xFF));
-}
-
 static inline void sound_write_le32(uint8_t *p, uint32_t v) {
     p[0] = (uint8_t)(v & UINT32_C(0xFF));
     p[1] = (uint8_t)((v >> 8U) & UINT32_C(0xFF));
@@ -171,20 +167,6 @@ static inline void sound_write_le32(uint8_t *p, uint32_t v) {
 static inline void sound_write_le64(uint8_t *p, uint64_t v) {
     sound_write_le32(p, (uint32_t)(v & UINT64_C(0xFFFFFFFF)));
     sound_write_le32(p + 4U, (uint32_t)((v >> 32U) & UINT64_C(0xFFFFFFFF)));
-}
-
-static inline void sound_write_fixed_ascii24(uint8_t dst[24], const char *src) {
-    size_t i = 0U;
-    if (src != NULL) {
-        while (i < 23U && src[i] != '\0') {
-            dst[i] = (uint8_t)src[i];
-            i++;
-        }
-    }
-    while (i < 24U) {
-        dst[i] = 0U;
-        i++;
-    }
 }
 
 static inline void sound_arena_init(SoundArena *arena) {
@@ -807,68 +789,58 @@ static inline sound_err_t sound_lift_to_fir(const SoundArena *arena, const char 
                                               "ex_resc"};
     static const uint32_t k_outputs[4] = {22U, 17U, 19U, 6U};
     static const sound__fir_op_desc_t k_ops[18] = {
-        {1U, 0U, 64U, {0U, 0U, 0U}, "k_mut"},       {1U, 0U, 64U, {0U, 0U, 0U}, "k_est"},
-        {1U, 0U, 64U, {0U, 0U, 0U}, "k_resc"},      {4U, 2U, 64U, {2U, 0U, 0U}, "diff_pos"},
-        {5U, 2U, 64U, {8U, 5U, 0U}, "step_pos"},    {4U, 2U, 64U, {0U, 9U, 0U}, "cand_pos"},
-        {4U, 2U, 64U, {3U, 1U, 0U}, "diff_neg"},    {5U, 2U, 64U, {11U, 5U, 0U}, "step_neg"},
-        {4U, 2U, 64U, {1U, 12U, 0U}, "cand_neg"},   {5U, 2U, 64U, {10U, 13U, 0U}, "clash"},
-        {18U, 1U, 1U, {14U, 0U, 0U}, "coh_ok"},     {15U, 3U, 64U, {15U, 0U, 10U}, "next_pos"},
-        {15U, 3U, 64U, {15U, 1U, 13U}, "next_neg"}, {6U, 1U, 64U, {4U, 0U, 0U}, "not_ex"},
-        {5U, 2U, 64U, {7U, 18U, 0U}, "next_resc"},  {5U, 2U, 64U, {7U, 4U, 0U}, "fired_resc"},
-        {6U, 1U, 64U, {20U, 0U, 0U}, "not_fired"},  {5U, 2U, 64U, {16U, 21U, 0U}, "final_pos"}};
+        {(uint16_t)FLOW_IR_OP_CONST_U64, 0U, 64U, {0U, 0U, 0U}, "k_mut"},
+        {(uint16_t)FLOW_IR_OP_CONST_U64, 0U, 64U, {0U, 0U, 0U}, "k_est"},
+        {(uint16_t)FLOW_IR_OP_CONST_U64, 0U, 64U, {0U, 0U, 0U}, "k_resc"},
+        {(uint16_t)FLOW_IR_OP_XOR_VEC, 2U, 64U, {2U, 0U, 0U}, "diff_pos"},
+        {(uint16_t)FLOW_IR_OP_AND_VEC, 2U, 64U, {8U, 5U, 0U}, "step_pos"},
+        {(uint16_t)FLOW_IR_OP_XOR_VEC, 2U, 64U, {0U, 9U, 0U}, "cand_pos"},
+        {(uint16_t)FLOW_IR_OP_XOR_VEC, 2U, 64U, {3U, 1U, 0U}, "diff_neg"},
+        {(uint16_t)FLOW_IR_OP_AND_VEC, 2U, 64U, {11U, 5U, 0U}, "step_neg"},
+        {(uint16_t)FLOW_IR_OP_XOR_VEC, 2U, 64U, {1U, 12U, 0U}, "cand_neg"},
+        {(uint16_t)FLOW_IR_OP_AND_VEC, 2U, 64U, {10U, 13U, 0U}, "clash"},
+        {(uint16_t)FLOW_IR_OP_EQ_ZERO, 1U, 1U, {14U, 0U, 0U}, "coh_ok"},
+        {(uint16_t)FLOW_IR_OP_CTRL_SEL, 3U, 64U, {15U, 0U, 10U}, "next_pos"},
+        {(uint16_t)FLOW_IR_OP_CTRL_SEL, 3U, 64U, {15U, 1U, 13U}, "next_neg"},
+        {(uint16_t)FLOW_IR_OP_NOT_VEC, 1U, 64U, {4U, 0U, 0U}, "not_ex"},
+        {(uint16_t)FLOW_IR_OP_AND_VEC, 2U, 64U, {7U, 18U, 0U}, "next_resc"},
+        {(uint16_t)FLOW_IR_OP_AND_VEC, 2U, 64U, {7U, 4U, 0U}, "fired_resc"},
+        {(uint16_t)FLOW_IR_OP_NOT_VEC, 1U, 64U, {20U, 0U, 0U}, "not_fired"},
+        {(uint16_t)FLOW_IR_OP_AND_VEC, 2U, 64U, {16U, 21U, 0U}, "final_pos"}};
 
-    sound_zero_bytes(out_buf, (size_t)SOUND_FIR_BYTES);
-    sound_write_le32(out_buf + 0U, SOUND_FIR_MAGIC);
-    sound_write_le32(out_buf + 4U, SOUND_FIR_VERSION);
-    sound_write_le32(out_buf + 8U, UINT32_C(1));  /* FLOW_IR_MULT_LINEAR */
-    sound_write_le32(out_buf + 12U, UINT32_C(1)); /* cleanAnc = true */
-    sound_write_le32(out_buf + 16U, UINT32_C(23));
-    sound_write_le32(out_buf + 20U, UINT32_C(5));
-    sound_write_le32(out_buf + 24U, UINT32_C(4));
-    sound_write_le32(out_buf + 28U, UINT32_C(18));
-    sound_write_le32(out_buf + 32U, UINT32_C(0));
-    sound_write_le32(out_buf + 36U, UINT32_C(0));
-    sound_write_fixed_ascii24(out_buf + 40U, effective_name);
+    flow_ir_wire_zero(out_buf, (size_t)SOUND_FIR_BYTES);
+    flow_ir_wire_write_header(out_buf, FLOW_IR_MULT_LINEAR, FLOW_IR_FLAG_CLEAN, UINT32_C(23),
+                              UINT32_C(5), UINT32_C(4), UINT32_C(18), UINT32_C(0), effective_name);
 
-    size_t off = 64U;
+    size_t off = FLOW_IR_HEADER_BYTES;
     for (uint32_t i = 0U; i < 5U; i++) {
-        sound_write_le16(out_buf + off, UINT16_C(64));
-        sound_write_fixed_ascii24(out_buf + off + 8U, k_in_names[i]);
-        off += 32U;
+        flow_ir_wire_write_val(out_buf + off, UINT16_C(64), UINT8_C(0), k_in_names[i]);
+        off += FLOW_IR_VAL_WIRE_B;
     }
     for (uint32_t i = 0U; i < 18U; i++) {
-        sound_write_le16(out_buf + off, k_ops[i].width);
-        sound_write_fixed_ascii24(out_buf + off + 8U, k_ops[i].name);
-        off += 32U;
+        flow_ir_wire_write_val(out_buf + off, k_ops[i].width, UINT8_C(0), k_ops[i].name);
+        off += FLOW_IR_VAL_WIRE_B;
     }
 
     for (uint32_t i = 0U; i < 5U; i++) {
-        sound_write_le32(out_buf + off + ((size_t)i * 4U), i);
+        flow_ir_wire_write_le32(out_buf + off + ((size_t)i * 4U), i);
     }
-    off += 24U; /* 5 inputs padded to 8-byte multiple */
+    off += FLOW_IR_WIRE_PAD8_U32_BYTES(5U);
 
     for (uint32_t i = 0U; i < 4U; i++) {
-        sound_write_le32(out_buf + off + ((size_t)i * 4U), k_outputs[i]);
+        flow_ir_wire_write_le32(out_buf + off + ((size_t)i * 4U), k_outputs[i]);
     }
-    off += 16U;
+    off += FLOW_IR_WIRE_PAD8_U32_BYTES(4U);
 
     const uint64_t k_consts[3] = {mutable_mask, active_mask, resc_mask};
     for (uint32_t i = 0U; i < 18U; i++) {
-        uint8_t *opr = out_buf + off;
-        sound_write_le16(opr + 0U, k_ops[i].kind);
-        sound_write_le16(opr + 2U, k_ops[i].num_ins);
-        sound_write_le32(opr + 4U, 5U + i);
-        for (uint16_t j = 0U; j < k_ops[i].num_ins; j++) {
-            sound_write_le32(opr + 8U + ((size_t)j * 4U), k_ops[i].ins[j]);
-        }
         uint64_t p0 = (i < 3U) ? k_consts[i] : UINT64_C(0);
-        sound_write_le64(opr + 40U, p0);
-        off += 72U;
+        flow_ir_wire_write_op(out_buf + off, k_ops[i].kind, k_ops[i].num_ins, 5U + i, k_ops[i].ins,
+                              0U, 0U, p0, UINT64_C(0), UINT64_C(0), UINT64_C(0));
+        off += FLOW_IR_OP_WIRE_B;
     }
 
-    uint64_t trailer = sound_fnv1a_bytes(SOUND_FNV1A_OFFSET, out_buf, off);
-    sound_write_le64(out_buf + off, trailer);
-    *out_len = off + 8U;
+    *out_len = flow_ir_wire_seal_trailer(out_buf, off);
     return SOUND_OK;
 }
 

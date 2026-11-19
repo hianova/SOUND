@@ -45,7 +45,7 @@ override CFLAGS += -DSOUND_VERSION_STRING=\"$(SOUND_VER)\" -I. -I$(BUILD_DIR) -i
 FREESTANDING_CFLAGS := -std=c17 -fPIC -ffreestanding -nostdlib -fno-builtin -fno-stack-protector \
                        -mgeneral-regs-only -DSOUND_EXPORT_RING0=1 \
                        -Wall -Wextra -Wpedantic -Wundef -Wmissing-prototypes -Werror -O2 \
-                       -I. -I$(BUILD_DIR) -isystem "$(FLOW_CORE_INC)"
+                       -I. -I$(BUILD_DIR) -isystem "$(FLOW_CORE_INC)" -isystem "$(FLOW_SDK_INC)"
 
 JSI_CFLAGS := -std=c17 -Wall -Wextra -Wpedantic -Wundef -Wmissing-prototypes -Werror -O2 -fPIC \
               -I. -I$(BUILD_DIR) -isystem "$(FLOW_CORE_INC)" -isystem "$(FLOW_SDK_INC)" -isystem "$(LEAN_SYSROOT)/include"
@@ -59,8 +59,7 @@ $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)
 
 upstream-deps:
-	@test -f "$(FLOW_BUILD)/Flow/Core.olean" && test -f "$(FLOW_BUILD)/Flow/Schema.olean" && test -f "$(FLOW_BUILD)/Flow/Morphism.olean" || \
-		$(MAKE) -C "$(FLOW_DIR)" build/lean/Flow.olean
+	$(MAKE) -C "$(FLOW_DIR)" build/lean/Flow.olean
 
 # Gate 0b: SOUND-local Bilattice & Hohfeldian bv_decide SSOT (`0 sorryAx`, leanchecker)
 $(BILATTICE_OLEAN): Sound/Bilattice.lean | $(BUILD_DIR)
@@ -104,9 +103,9 @@ $(BUILD_DIR)/sound_ring0.o: sound.h VERSION $(SCHEMA_HDR) | $(BUILD_DIR)
 	@! objdump -d $@ | grep -Eq '([[:space:]]|%)(fadd|fsub|fmul|fdiv|scvtf|ucvtf|fcvtzs|fcvtzu|fcmp|fmov|addsd|subsd|mulsd|divsd|cvtsi2sd|cvttsd2si|xmm[0-9]|ymm[0-9]|zmm[0-9])' || \
 		(echo "ERROR: FPU/SIMD instruction emitted in Ring-0 kernel!" && objdump -d $@ && exit 1)
 	@printf '#include "sound.h"\nint sound_cpp20_probe(void) { return (int)(sizeof(SoundArena) + alignof(SoundCell64)); }\n' | \
-		$(CXX) -x c++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -I. -I$(BUILD_DIR) -isystem "$(FLOW_CORE_INC)" -c - -o $(BUILD_DIR)/.cpp20_probe.o
+		$(CXX) -x c++ -std=c++20 -Wall -Wextra -Wpedantic -Werror -I. -I$(BUILD_DIR) -isystem "$(FLOW_CORE_INC)" -isystem "$(FLOW_SDK_INC)" -c - -o $(BUILD_DIR)/.cpp20_probe.o
 	@rm -f $(BUILD_DIR)/.cpp20_probe.o
-	@echo "  [PASS] 0 undef, 0 udiv/sdiv, 0 BLR/BR, 0 FPU/SIMD, Core-only C++20 16KB/64B ABI clean"
+	@echo "  [PASS] 0 undef, 0 udiv/sdiv, 0 BLR/BR, 0 FPU/SIMD, Freestanding Core+IR-Wire C++20 16KB/64B ABI clean"
 
 $(STATIC_STAMP): $(C_SOURCES) $(SCHEMA_HDR) | $(BUILD_DIR)
 	$(CLANG_TIDY) -checks='-*,clang-analyzer-*,-clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling' \

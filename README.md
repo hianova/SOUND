@@ -10,7 +10,7 @@
 
 | 層級 | 所在模組 | 核心職責與邊界 |
 | :--- | :--- | :--- |
-| **數學基底（SSOT）** | [`../flow/Flow/`](../flow/Flow/)（`Flow.Bilattice`、`Flow.BitAlgebra`、`Flow.Schema`、`searu.h`） | 領域無關的 Lean 4 機器驗證（`0 sorryAx`）：四態雙格交替不動點 $\Gamma / \Gamma^2$、單一固定點與雙格互為不動點定理、64-bit `KanLock` 與雙極性閘控位元板、512-bit C17 Arena Co-Generator，以及 Pure-GPR `SEARU` 離散修復求解器。 |
+| **數學基底（SSOT）** | [`../FLOW/`](../FLOW/README.md)（`Flow.Core`、`Flow.Schema`、`Flow.Morphism`、`searu.h`、`flow_ir_wire.h`）＋ [`Sound/Bilattice.lean`](Sound/Bilattice.lean) | 領域無關的 Lean 4 機器驗證（`0 sorryAx`）：四態雙格交替不動點 $\Gamma / \Gamma^2$ 與 64-bit `KanLock` 雙極性閘控（`Sound.Bilattice`）、512-bit 零 `memcpy` C17 Arena Co-Generator（`Flow.Schema`）、`"FIR1"` 通用線性態射編碼（`Flow.Morphism` / `flow_ir_wire.h`），以及 Pure-GPR `SEARU` 離散修復求解器（`searu.h`）。 |
 | **Layer 0（零信任入口閘門）** | [`sound.h`](sound.h) `sound_admit_forest` ＋ `Flow.Bilattice.admitGuard` | 只驗結構化 `SoundForestCtrl64` / `SoundCandidate64`：檢查 Byte-Span 邊界、歧義／未消解指代旗標，並隔離 `Irrealis` 假設；嚴禁基礎庫內嵌自然語言詞典或明文剖析。 |
 | **Layer 1（單調日誌 × Hohfeld 守恆）** | [`sound.h`](sound.h) `PhysLog` ＋ `SoundNormative64` | 物理事件只增不減進入 64-slot 環形 `PhysLog`（FNV-1a 鏈）；規範層維護 Hohfeld `Duty+/Duty-/Power/Immunity/Voidable/RescissionPower`（全部持久化於 16KB `SoundArena`）。受 `Immunity`（`KanLock`）鎖定槽位對賦權與撤銷嚴格免疫；撤銷意思表示後重算不動點並同步清理衍生義務與撤銷權，同時保留多重獨立支撐。 |
 | **Layer 2（四態雙格核心 × SEARU × FIR1 升格）** | [`Sound.lean`](Sound.lean) ≡ [`sound.h`](sound.h) | `Sound.lean` 以 `0` 本地定理配置 256-slot `soundArenaSchema`，於 Elaboration-Time 透過 `sound_lean_jsi.c` 驗證 10 組 golden `16,384B` `.snd` 與 `2,144B` `"FIR1"`（`Flow.Morphism`）位元等價。`sound_eval` 計算四態雙格與雙向休謨防火牆；`sound_searu_repair_conflict` 呼叫 `SEARU_SOLVE_INLINE` 求解極大無衝突擴充集；`sound_lift_to_fir`（Ring-0 Pure-GPR）將已驗證 `SoundArena` 直接升格為 `FLOW_IR_MULT_LINEAR` QTT 權限閘門電路。 |
@@ -20,7 +20,7 @@
 
 ## 二、檔案結構
 
-* [**`Sound.lean`**](Sound.lean)：`import Flow` 的純配置與 AOT `SoundArena` / `Flow.Morphism` `.fir` 編譯器（`0` 本地 `theorem/lemma/axiom`、通過 `leanchecker`），負責產出 `build/sound_schema_abi.h` 並執行 `#eval Sound.compileTimeBoundaryGate`。
+* [**`Sound.lean`**](Sound.lean)：按需引入 `Flow.Core` / `Flow.Schema` / `Flow.Morphism` ＋ [`Sound/Bilattice.lean`](Sound/Bilattice.lean) 的純配置與 AOT `SoundArena` / `Flow.Morphism` `.fir` 編譯器（`0` 本地 `theorem/lemma/axiom`、通過 `leanchecker`），負責產出 `build/sound_schema_abi.h` 並執行 `#eval Sound.compileTimeBoundaryGate`。
 * [**`sound.h`**](sound.h)：單標頭 Pure-GPR C17 核心（零堆積、零浮點、`-ffreestanding -nostdlib -fno-builtin -mgeneral-regs-only` Ring-0 潔淨、相容 C++20），含 `sound_lift_to_fir` 與 `sound_ring0_lift_to_fir`。
 * [**`sound_lean_jsi.c`**](sound_lean_jsi.c)：Lean 4 動態外掛 JSI 橋接（僅編入 `libsound_jsi`，絕不進入 `libsound.a` 或 `build/sound`）。
 * [**`sound.c`**](sound.c) ＋ [**`Makefile`**](Makefile)：零堆積、零 `leanshared` 獨立 CLI（`selftest` / `verify <arena.snd>` / `repair <arena.snd> [seed]` / `lift-fir <arena.snd> <out.fir> [--repaired [seed]]`）。
