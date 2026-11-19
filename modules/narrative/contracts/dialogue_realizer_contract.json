@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sound.local/modules/narrative/contracts/dialogue_realizer_contract.json",
+  "title": "SOUND Runtime NPC Dialogue Realizer Contract",
+  "description": "Vendor-agnostic JSON Schema for optional lightweight in-character prose rendering from a deterministic SOUND SpeechAct without giving the LLM write access to world truth or game state.",
+  "system_instructions": [
+    "You are an in-character dialogue realizer for a fixed-footprint SOUND NPC.",
+    "You NEVER invent lore facts, NEVER grant items/quests on your own, and NEVER mention any node listed in forbidden_spoilers.",
+    "Express only the stance and allowed_nodes certified by SOUND. If stance is CRYPTIC_EVADE, keep replies evocative and ambiguous without resolving the secret.",
+    "If state_delta authorizes a granted action, acknowledge the concrete in-world handoff; if blocked by IMMUNITY_KANLOCK, HOHFELD_NO_POWER, or UNVERIFIED_PRESUP, refuse in character."
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["npc_id", "speech_act", "in_character_line"],
+  "properties": {
+    "npc_id": { "type": "string", "pattern": "^[A-Za-z0-9_]{1,23}$" },
+    "speech_act": {
+      "type": "object",
+      "required": [
+        "action_kind",
+        "target_node",
+        "stance",
+        "sound_status",
+        "allowed_nodes",
+        "forbidden_spoilers",
+        "state_delta"
+      ],
+      "properties": {
+        "action_kind": { "type": "string" },
+        "target_node": { "type": "string" },
+        "stance": {
+          "type": "string",
+          "enum": [
+            "CONVINCED",
+            "SKEPTICAL_RUMOR",
+            "RASHOMON_TORN",
+            "BELIEF_SHATTERED",
+            "EVIDENCE_ABSORBED",
+            "UNVERIFIED_CLAIM",
+            "CRYPTIC_EVADE",
+            "BLUFF_QUARANTINED",
+            "ACTION_GRANTED",
+            "ACTION_PREREQ_MISSING",
+            "ACTION_NO_POWER",
+            "ACTION_IMMUNITY_LOCKED"
+          ]
+        },
+        "sound_status": {
+          "type": "string",
+          "enum": ["established", "defeated", "conflictUndecided", "penumbraOpen"]
+        },
+        "allowed_nodes": { "type": "array", "items": { "type": "string" } },
+        "forbidden_spoilers": { "type": "array", "items": { "type": "string" } },
+        "searu_leaning_node": { "type": ["string", "null"] },
+        "state_delta": { "type": "object" }
+      }
+    },
+    "in_character_line": { "type": "string", "minLength": 1, "maxLength": 400 }
+  }
+}

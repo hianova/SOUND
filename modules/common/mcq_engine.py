@@ -432,10 +432,13 @@ def solve_question(
 
 
 def discover_packs(modules_root: Path) -> Dict[str, Tuple[Path, Dict[str, Any]]]:
-    """Discover and validate all Topic Packs under `modules/*/packs/*.json`."""
+    """Discover and validate MCQ Topic Packs under `modules/*/packs/*.json`."""
     packs: Dict[str, Tuple[Path, Dict[str, Any]]] = {}
     for p in sorted(modules_root.glob("*/packs/*.json")):
-        pack = load_topic_pack(p)
+        pack = json.loads(p.read_text(encoding="utf-8"))
+        if pack.get("domain") == "narrative":
+            continue
+        validate_topic_pack(pack)
         pid = str(pack["pack_id"])
         if pid in packs:
             raise PackValidationError(f"Duplicate pack_id {pid!r} across {packs[pid][0]} and {p}")

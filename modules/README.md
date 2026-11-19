@@ -1,6 +1,7 @@
 # SOUND Domain Modules（稅務 & 會計基礎選擇題無運算陷阱辨識）
 
 本資料夾為 [`SOUND`](../README.md) 核心之外的**領域應用模組層**，採單向零耦合邊界：
+> 相關模組：需要小說設定除錯、魂系道具敘事生成與永續多 NPC 互動原型，另見 [`modules/narrative/README.md`](narrative/README.md)。
 - 核心程式（`Sound.lean`、`sound.h`、`sound.c`、`sound_lean_jsi.c`、`Makefile`）**完全不引用** `modules/`、任何自然語言詞庫或會計／稅法領域名詞。
 - `modules/` 僅透過標準 `python3`（純 stdlib，零第三方套件）把宣告式領域 Topic Pack 與題目實例打包成 `16,384B` `"SND2"` `SoundArena`，單向呼叫 `./build/sound verify` 與 `./build/sound repair` 取得正式 4 值 bilattice 判定。
 

@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sound.local/modules/narrative/contracts/lore_extractor_contract.json",
+  "title": "SOUND Offline Narrative Lore Extractor Output Contract",
+  "description": "Vendor-agnostic JSON Schema instructing an offline LLM compiler to extract novel chapters or worldbooks into a bounded (<= 62 nodes) SOUND Narrative Lore Pack.",
+  "system_instructions": [
+    "You are an offline story-to-graph compiler targeting the 64-node SoundArena budget (keep pack nodes <= 62).",
+    "Extract canonical ASCII node IDs matching ^[A-Za-z0-9_]{1,24}$ partitioned cleanly into: law/statute roots (enacted_norm, clauses=[[]]), factual event slots (fact_slot), defeasible beliefs/actions (clauses + presup + attacked_by), and intentional mystery hooks (role='penumbra', penumbra=true).",
+    "Declare intentional competing narratives explicitly in intentional_rashomon pairs so the SOUND auditor separates purposeful Rashomon tension from accidental plot contradictions.",
+    "Project collectible items as unlocks_facts (+ optional combo_facts) rather than freeform prose, and assign each NPC bounded known_facts, rumor_facts, power_nodes, and immunity_nodes."
+  ],
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "pack_id",
+    "domain",
+    "version",
+    "title",
+    "nodes",
+    "public_facts",
+    "full_truth_facts",
+    "intentional_rashomon",
+    "items",
+    "npcs"
+  ],
+  "properties": {
+    "pack_id": { "type": "string", "pattern": "^[a-z0-9_]{1,48}$" },
+    "domain": { "const": "narrative" },
+    "version": { "type": "string" },
+    "title": { "type": "string", "minLength": 1 },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 62,
+      "items": {
+        "type": "object",
+        "required": ["id", "role"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[A-Za-z0-9_]{1,24}$" },
+          "role": {
+            "type": "string",
+            "enum": ["statute_root", "fact_slot", "rule", "effect", "penumbra"]
+          },
+          "sort": { "type": "string", "enum": ["factual", "normative", "institutional"] },
+          "evid": {
+            "type": "string",
+            "enum": ["direct", "sensory", "enacted_norm", "inferential", "reportative", "assumed"]
+          },
+          "penumbra": { "type": "boolean" },
+          "presup": {
+            "type": "array",
+            "items": { "type": "string", "pattern": "^[A-Za-z0-9_]{1,24}$" }
+          },
+          "attacked_by": {
+            "type": "array",
+            "items": { "type": "string", "pattern": "^[A-Za-z0-9_]{1,24}$" }
+          },
+          "clauses": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "array",
+              "items": { "type": "string", "pattern": "^[A-Za-z0-9_]{1,24}$" }
+            }
+          }
+        }
+      }
+    },
+    "public_facts": { "type": "array", "items": { "type": "string" } },
+    "full_truth_facts": { "type": "array", "items": { "type": "string" } },
+    "intentional_rashomon": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "minItems": 2,
+        "maxItems": 2,
+        "items": { "type": "string", "pattern": "^[A-Za-z0-9_]{1,24}$" }
+        }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["item_id", "name", "unlocks_facts"],
+        "properties": {
+          "item_id": { "type": "string" },
+          "name": { "type": "string" },
+          "unlocks_facts": { "type": "array", "items": { "type": "string" } },
+          "combo_facts": { "type": "array", "items": { "type": "string" } },
+          "rumor_nodes": { "type": "array", "items": { "type": "string" } },
+          "penumbra_nodes": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "npcs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["npc_id", "name", "known_facts", "power_nodes", "immunity_nodes"],
+        "properties": {
+          "npc_id": { "type": "string", "pattern": "^[A-Za-z0-9_]{1,23}$" },
+          "name": { "type": "string" },
+          "known_facts": { "type": "array", "items": { "type": "string" } },
+          "rumor_facts": { "type": "array", "items": { "type": "string" } },
+          "power_nodes": { "type": "array", "items": { "type": "string" } },
+          "immunity_nodes": { "type": "array", "items": { "type": "string" } },
+          "searu_seed": { "type": "string" }
+        }
+      }
+    }
+  }
+}

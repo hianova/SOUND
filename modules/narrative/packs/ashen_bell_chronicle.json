@@ -1,0 +1,393 @@
+{
+  "pack_id": "ashen_bell_chronicle",
+  "domain": "narrative",
+  "standard": "SOUND Narrative Lore & Epistemic Graph v1.0",
+  "version": "1.0.0",
+  "title": "灰鐘鎮編年史：聖鐘失火案",
+  "synopsis": "百年古鐘樓於冬至夜失火，教會官方指稱前守夜人范恩縱火，商會傳言則直指代理修道院長自導自演以封鎖地下墓室。玩家透過拼湊碎片化遺物、驗證證據鍊、對質資訊不對稱的 NPC，揭示聖鐘鎮深埋的陰謀與未解半影伏筆。",
+  "nodes": [
+    {
+      "id": "law_chronicle_record",
+      "role": "statute_root",
+      "sort": "normative",
+      "evid": "enacted_norm",
+      "title": "灰鐘鎮教會正史檔案",
+      "description": "灰鐘鎮官方紀錄與既定公告基準",
+      "clauses": [[]]
+    },
+    {
+      "id": "law_guild_testimony",
+      "role": "statute_root",
+      "sort": "normative",
+      "evid": "enacted_norm",
+      "title": "鑄鐘工會證言簿",
+      "description": "工會匠師口述見證與紀錄基準",
+      "clauses": [[]]
+    },
+    {
+      "id": "law_forensic_proof",
+      "role": "statute_root",
+      "sort": "normative",
+      "evid": "enacted_norm",
+      "title": "實證驗屍與物證準則",
+      "description": "經由物理遺物與具名文書構成之鐵證推斷原則",
+      "clauses": [[]]
+    },
+    {
+      "id": "law_crypt_oath",
+      "role": "statute_root",
+      "sort": "normative",
+      "evid": "enacted_norm",
+      "title": "守鐘人地下墓室誓約",
+      "description": "守鐘人世代守護聖鐘底層封印之授權規範",
+      "clauses": [[]]
+    },
+    {
+      "id": "law_trade_charter",
+      "role": "statute_root",
+      "sort": "normative",
+      "evid": "enacted_norm",
+      "title": "工匠行會鍛造契約",
+      "description": "鐵匠行會受託打造鑰匙或裝備之契約規範",
+      "clauses": [[]]
+    },
+    {
+      "id": "law_abyss_whisper",
+      "role": "statute_root",
+      "sort": "normative",
+      "evid": "enacted_norm",
+      "title": "深淵古鐘禁典殘章",
+      "description": "語焉不詳的古鐘禁忌與深處低語基準",
+      "clauses": [[]]
+    },
+    {
+      "id": "ev_tower_burned",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "鐘樓冬至夜大火",
+      "description": "聖鐘樓在冬至夜遭大火吞噬並半毀"
+    },
+    {
+      "id": "ev_vane_seen_gate",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "范恩現身北門火場",
+      "description": "有人目擊守夜人范恩於起火時衝入鐘樓北門"
+    },
+    {
+      "id": "ev_abbot_locked_door",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "院長自內鎖上鐵門",
+      "description": "失火前修道院長曾反鎖通往地下墓室的銅鐵門"
+    },
+    {
+      "id": "ev_charred_oil_flask",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "高純度聖油助燃殘跡",
+      "description": "火場核心檢出唯有院長密庫保管的高純度祝聖燈油"
+    },
+    {
+      "id": "ev_vane_rescue_order",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "范恩焦痕密令",
+      "description": "手令證明范恩當夜係奉密令冒險衝入火場搶救守夜學徒"
+    },
+    {
+      "id": "ev_abbot_confession",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "院長親筆懺悔錄",
+      "description": "院長認罪坦言為掩蓋墓室裂痕而點燃庫房聖油"
+    },
+    {
+      "id": "ev_frost_seal_crack",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "地下霜紋封印龜裂",
+      "description": "聖鐘底座的古老冰霜封印在大火後出現裂紋"
+    },
+    {
+      "id": "ev_fake_pardon_scroll",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "偽造特赦羊皮卷",
+      "description": "未經王室用印的假冒特赦文書"
+    },
+    {
+      "id": "ev_bell_humming",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "廢墟深夜低鳴共震",
+      "description": "無風的深夜，燒毀的巨鐘殘骸仍傳出低頻震動"
+    },
+    {
+      "id": "ev_player_helped_smith",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "尋回精煉灰鐵礦",
+      "description": "冒險者替老鐵匠布蘭尋回失落的灰鐵礦石"
+    },
+    {
+      "id": "ev_warden_oath_signed",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "簽署地下守密誓約",
+      "description": "冒險者以鮮血在守鐘人誓約簿上立誓查封深層威脅"
+    },
+    {
+      "id": "ev_guild_bribe_rumor",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "酒館商會賄賂傳聞",
+      "description": "來歷不明的街巷耳語，聲稱工會收賄栽贓教會"
+    },
+    {
+      "id": "claim_vane_arsonist",
+      "role": "rule",
+      "sort": "normative",
+      "evid": "direct",
+      "title": "官方定罪：范恩縱火案",
+      "description": "教會公告認定前守夜人范恩刻意縱火焚毀聖鐘樓",
+      "attacked_by": ["claim_abbot_staged", "truth_vane_innocent", "truth_abbot_culprit"],
+      "clauses": [["law_chronicle_record", "ev_tower_burned", "ev_vane_seen_gate"]]
+    },
+    {
+      "id": "claim_abbot_staged",
+      "role": "rule",
+      "sort": "normative",
+      "evid": "direct",
+      "title": "工會控訴：院長自導自演",
+      "description": "鑄鐘工會懷疑院長為封鎖墓室而自行製造火警",
+      "attacked_by": ["claim_vane_arsonist"],
+      "clauses": [["law_guild_testimony", "ev_tower_burned", "ev_abbot_locked_door"]]
+    },
+    {
+      "id": "truth_vane_innocent",
+      "role": "effect",
+      "sort": "normative",
+      "evid": "direct",
+      "title": "真相洗冤：范恩入火救人",
+      "description": "范恩當夜進入北門係冒死營救受困學徒，非縱火犯",
+      "presup": ["ev_vane_rescue_order"],
+      "clauses": [["law_forensic_proof", "ev_vane_rescue_order"]]
+    },
+    {
+      "id": "truth_abbot_culprit",
+      "role": "effect",
+      "sort": "normative",
+      "evid": "direct",
+      "title": "真兇確定：院長焚塔滅跡",
+      "description": "聖油殘跡與親筆懺悔錄證實院長才是縱火焚塔真兇",
+      "presup": ["ev_charred_oil_flask", "ev_abbot_confession"],
+      "clauses": [["law_forensic_proof", "ev_charred_oil_flask", "ev_abbot_confession"]]
+    },
+    {
+      "id": "rumor_guild_treason",
+      "role": "rule",
+      "sort": "normative",
+      "evid": "direct",
+      "title": "流言：工會收賄叛變",
+      "description": "依賴未經證實酒館傳聞而推定的工會通敵指控",
+      "presup": ["ev_guild_bribe_rumor"],
+      "clauses": [["law_chronicle_record", "ev_guild_bribe_rumor"]]
+    },
+    {
+      "id": "act_smith_forge_key",
+      "role": "effect",
+      "sort": "normative",
+      "evid": "direct",
+      "title": "鐵匠鍛造鐘樓側門鑰匙",
+      "description": "老鐵匠同意依行會契約為冒險者重鑄鐘樓側門鑰匙",
+      "presup": ["ev_player_helped_smith"],
+      "clauses": [["law_trade_charter", "ev_player_helped_smith"]]
+    },
+    {
+      "id": "act_grant_crypt_key",
+      "role": "effect",
+      "sort": "normative",
+      "evid": "direct",
+      "title": "守鐘人交付地下墓室銅鑰",
+      "description": "查明院長縱火動機並立誓後，守鐘人授權開啟墓室通道",
+      "presup": ["truth_abbot_culprit", "ev_warden_oath_signed"],
+      "clauses": [["law_crypt_oath", "truth_abbot_culprit", "ev_warden_oath_signed"]]
+    },
+    {
+      "id": "act_royal_pardon",
+      "role": "effect",
+      "sort": "normative",
+      "evid": "direct",
+      "title": "頒布王室特赦令",
+      "description": "僅國王御前或特使可行使之最高赦免特權",
+      "presup": ["truth_vane_innocent", "truth_abbot_culprit"],
+      "clauses": [["law_crypt_oath", "truth_vane_innocent", "truth_abbot_culprit"]]
+    },
+    {
+      "id": "act_open_crypt_seal",
+      "role": "effect",
+      "sort": "normative",
+      "evid": "direct",
+      "title": "解除聖鐘底層最終封印",
+      "description": "持墓室銅鑰並解除底層霜紋封印（受高階主線鎖保護）",
+      "presup": ["act_grant_crypt_key"],
+      "clauses": [["law_crypt_oath", "act_grant_crypt_key", "ev_frost_seal_crack"]]
+    },
+    {
+      "id": "lore_church_hero_myth",
+      "role": "rule",
+      "sort": "normative",
+      "evid": "direct",
+      "title": "教會神話：院長捨身護鐘",
+      "description": "正史碑文歌頌院長於火海中搶救聖器、忠義可風",
+      "attacked_by": ["truth_abbot_culprit"],
+      "clauses": [["law_chronicle_record", "ev_tower_burned"]]
+    },
+    {
+      "id": "lore_frost_omen",
+      "role": "rule",
+      "sort": "normative",
+      "evid": "direct",
+      "title": "霜紋裂響異象紀錄",
+      "description": "封印龜裂與廢墟鐘鳴同時出現，預示地下異常波動",
+      "presup": ["ev_frost_seal_crack", "ev_bell_humming"],
+      "clauses": [["law_abyss_whisper", "ev_frost_seal_crack", "ev_bell_humming"]]
+    },
+    {
+      "id": "pen_sleeper_alive",
+      "role": "penumbra",
+      "sort": "normative",
+      "evid": "direct",
+      "penumbra": true,
+      "title": "鐘下沉睡者是否甦醒",
+      "description": "巨鐘深處的共振是否源自被鎮壓的古存在，故意保留不說破",
+      "clauses": [["law_abyss_whisper", "ev_bell_humming"]]
+    },
+    {
+      "id": "pen_bell_origin",
+      "role": "penumbra",
+      "sort": "normative",
+      "evid": "direct",
+      "penumbra": true,
+      "title": "聖鐘最初鑄造來歷",
+      "description": "聖鐘乃神賜抑或自深海打撈之禁忌造物，於第一章保持未決伏筆",
+      "clauses": [["law_abyss_whisper", "ev_tower_burned"]]
+    }
+  ],
+  "public_facts": [
+    "ev_tower_burned",
+    "ev_vane_seen_gate",
+    "ev_abbot_locked_door"
+  ],
+  "full_truth_facts": [
+    "ev_tower_burned",
+    "ev_vane_seen_gate",
+    "ev_abbot_locked_door",
+    "ev_charred_oil_flask",
+    "ev_vane_rescue_order",
+    "ev_abbot_confession",
+    "ev_frost_seal_crack",
+    "ev_bell_humming",
+    "ev_player_helped_smith",
+    "ev_warden_oath_signed"
+  ],
+  "intentional_rashomon": [
+    ["claim_vane_arsonist", "claim_abbot_staged"]
+  ],
+  "items": [
+    {
+      "item_id": "item_church_lantern",
+      "name": "灰鐘教會制式銅燈",
+      "slot_kind": "道具・隨身燈具",
+      "unlocks_facts": [],
+      "rumor_nodes": ["rumor_guild_treason"],
+      "penumbra_nodes": [],
+      "base_flavor": "刻有灰鐘徽記的黃銅風燈，提把上還殘留冬至夜撲火時燻出的灰白煤痕。",
+      "rumor_flavor": "據醉醺醺的酒保私下嚼舌，鑄鐘工會似乎拿了外邦商團的金幣……只是無人見過實據。"
+    },
+    {
+      "item_id": "item_charred_oil_flask",
+      "name": "焦黑的祭壇聖油壺",
+      "slot_kind": "關鍵物證・火場殘骸",
+      "unlocks_facts": ["ev_charred_oil_flask"],
+      "rumor_nodes": [],
+      "penumbra_nodes": [],
+      "base_flavor": "在倒塌樑柱下拾獲的銀口油壺，壺底凝著一滴未燃盡、僅教會院長密庫配發的高純度祝聖橄欖油。"
+    },
+    {
+      "item_id": "item_vane_rescue_order",
+      "name": "范恩的焦痕密令",
+      "slot_kind": "關鍵遺物・書面手令",
+      "unlocks_facts": ["ev_vane_rescue_order"],
+      "rumor_nodes": [],
+      "penumbra_nodes": [],
+      "base_flavor": "邊角燒焦卻仍可辨識火漆印記的緊急命令，指令守夜人范恩於鐘聲異變時破門救出見習學徒。"
+    },
+    {
+      "item_id": "item_abbot_confession",
+      "name": "修道院長的未寄懺悔錄",
+      "slot_kind": "關鍵遺物・親筆告白",
+      "unlocks_facts": ["ev_abbot_confession"],
+      "combo_facts": ["ev_charred_oil_flask"],
+      "rumor_nodes": [],
+      "penumbra_nodes": [],
+      "base_flavor": "藏在鐘樓夾層磚縫裡的火漆長信，署名正是失火後便失蹤的代理修道院長。",
+      "combo_note": "須與『焦黑的祭壇聖油壺』物證互證，始足以完全坐實縱火真兇並擊碎正史神話。"
+    },
+    {
+      "item_id": "item_cracked_bell_shard",
+      "name": "裂紋古鐘殘片",
+      "slot_kind": "護符・古老碎片",
+      "unlocks_facts": ["ev_frost_seal_crack", "ev_bell_humming"],
+      "rumor_nodes": [],
+      "penumbra_nodes": ["pen_sleeper_alive", "pen_bell_origin"],
+      "base_flavor": "從聖鐘底層敲落的青銅碎片，斷口覆著一層不屬於冬夜的薄霜，貼耳能聽見遙遠潮汐般的共振。",
+      "cryptic_hint": "霜紋底下究竟鎮著鐘聲，還是某種學會了祈禱的睡眠，灰鐘鎮的碑石至今隻字未提。"
+    }
+  ],
+  "npcs": [
+    {
+      "npc_id": "npc_archivist",
+      "name": "馬修",
+      "role_title": "教會書記官",
+      "known_facts": ["ev_tower_burned", "ev_vane_seen_gate"],
+      "rumor_facts": ["ev_guild_bribe_rumor"],
+      "power_nodes": [],
+      "immunity_nodes": ["act_royal_pardon", "act_open_crypt_seal"],
+      "searu_seed": "0x4152434849564531"
+    },
+    {
+      "npc_id": "npc_blacksmith",
+      "name": "布蘭",
+      "role_title": "鑄鐘工會老鐵匠",
+      "known_facts": ["ev_tower_burned", "ev_vane_seen_gate", "ev_abbot_locked_door"],
+      "rumor_facts": [],
+      "power_nodes": ["act_smith_forge_key"],
+      "immunity_nodes": ["act_royal_pardon", "act_open_crypt_seal"],
+      "searu_seed": "0x534D4954485F3031"
+    },
+    {
+      "npc_id": "npc_warden",
+      "name": "奧德里克",
+      "role_title": "老守鐘人",
+      "known_facts": ["ev_tower_burned", "ev_frost_seal_crack", "ev_bell_humming"],
+      "rumor_facts": [],
+      "power_nodes": ["act_grant_crypt_key"],
+      "immunity_nodes": ["act_royal_pardon"],
+      "searu_seed": "0x57415244454E3031"
+    }
+  ]
+}

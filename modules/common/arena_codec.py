@@ -14,6 +14,7 @@ SOUND_MAGIC = 0x32444E53  # "SND2"
 SOUND_VERSION = 2
 SOUND_ARENA_CELLS = 256
 SOUND_ARENA_BYTES = 16384
+SOUND_FIR_BYTES = 2144
 SOUND_MAX_NODES = 64
 SOUND_MAX_CLAUSES = 8
 SOUND_LABEL_BYTES = 32
@@ -73,6 +74,10 @@ _REPAIR_RE = re.compile(
     r"^\[repair\]\s+\S+\s+\|\s+conf_in=(0x[0-9a-fA-F]+)\s+->\s+"
     r"cand=(0x[0-9a-fA-F]+)\s+retract=(0x[0-9a-fA-F]+)\s+"
     r"pinned=(0x[0-9a-fA-F]+)\s+energy=(\d+)\s+iters=(\d+)\s+conv=(\d+)\s*$"
+)
+_LIFT_FIR_RE = re.compile(
+    r"^\[lift-fir\]\s+\S+\s+->\s+\S+\s+\((\d+)B,\s+name=(\S+),\s+active=(0x[0-9a-fA-F]+)\)\s+\|\s+"
+    r"mult_bits=(\d+)\s+mult_depth=(\d+)\s+unitary=OK\s*$"
 )
 
 
@@ -138,6 +143,18 @@ class ArenaRepairResult:
     energy: int
     iters: int
     converged: bool
+    raw_output: str
+
+
+@dataclass(frozen=True)
+class ArenaFirResult:
+    """Parsed output and 2,144B `"FIR1"` QTT authority circuit from `build/sound lift-fir`."""
+
+    fir_bytes: bytes
+    prog_name: str
+    active_mask: int
+    mult_bits: int
+    mult_depth: int
     raw_output: str
 
 
@@ -385,5 +402,58 @@ def repair_arena_bytes(
         energy=int(m.group(5)),
         iters=int(m.group(6)),
         converged=(int(m.group(7)) == 1),
+        raw_output=proc.stdout,
+    )
+
+
+def lift_fir_arena_bytes(
+    arena_bytes: bytes,
+    sound_bin: Path,
+    *,
+    prog_name: str = "npc_gate",
+    repaired: bool = False,
+    seed: Optional[str] = None,
+) -> ArenaFirResult:
+    """Run `build/sound lift-fir` on a 16,384B arena and return its verified 2,144B FIR1 gate."""
+    if len(arena_bytes) != SOUND_ARENA_BYTES:
+        raise ValueError(f"Expected {SOUND_ARENA_BYTES}B SoundArena, got {len(arena_bytes)}B")
+    if not sound_bin.is_file():
+        raise FileNotFoundError(f"SOUND CLI binary not found: {sound_bin}")
+    if not prog_name or "/" in prog_name or "\\" in prog_name:
+        raise ValueError(f"Invalid FIR program basename: {prog_name!r}")
+
+    with tempfile.TemporaryDirectory(prefix="sound_fir_") as tmp_dir:
+        snd_path = Path(tmp_dir) / f"{prog_name}.snd"
+        fir_path = Path(tmp_dir) / f"{prog_name}.fir"
+        snd_path.write_bytes(arena_bytes)
+        cmd = [str(sound_bin), "lift-fir", str(snd_path), str(fir_path)]
+        if repaired:
+            cmd.append("--repaired")
+            if seed is not None:
+                cmd.append(seed)
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+        if proc.returncode != 0:
+            raise SoundVerifyError(
+                f"`sound lift-fir` failed (rc={proc.returncode}): "
+                f"{proc.stderr.strip() or proc.stdout.strip()}"
+            )
+        stdout = proc.stdout.strip()
+        m = _LIFT_FIR_RE.match(stdout)
+        if not m:
+            raise SoundVerifyError(f"`sound lift-fir` unexpected output: {stdout!r}")
+        fir_bytes = fir_path.read_bytes()
+
+    if len(fir_bytes) != SOUND_FIR_BYTES or not fir_bytes.startswith(b"FIR1"):
+        raise SoundVerifyError(
+            f"Malformed lifted FIR1 artifact: len={len(fir_bytes)} magic={fir_bytes[:4]!r}"
+        )
+
+    return ArenaFirResult(
+        fir_bytes=fir_bytes,
+        prog_name=m.group(2),
+        active_mask=int(m.group(3), 16),
+        mult_bits=int(m.group(4)),
+        mult_depth=int(m.group(5)),
         raw_output=proc.stdout,
     )
