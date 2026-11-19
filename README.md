@@ -39,3 +39,21 @@ make fmt && make clean && make verify
 3. **Gate 3（Zero-Lean-Runtime 獨立執行檔）**：驗證 `libsound.a` 與 `build/sound` 零堆積、零浮點、零 `leanshared`。
 4. **Gate 4（JSI Elaboration-Time 閘門）**：驗證 10 組 `16,384B` `.snd` 與 `2,144B` `"FIR1"` 電路 Lean↔C17 位元對等、`flow_ir_eval_u64` 執行、`SEARU` 衝突修復、Layer 0/1 測試與 4,096 組隨機圖不變量 Fuzz。
 5. **Gate 5（CLI 實測與 `clang-format`）**：執行 `sound selftest`（含 `T7(fir)`）、`verify`、`repair`、`lift-fir`、`cmp -s` 位元比對與格式檢查。
+
+---
+
+## 四、外圍橋接模組、Kaggle Agent 與實測總覽
+
+所有外圍 Python／ADK／評測程式皆放在 [`modules/`](modules/README.md) 與 [`kaggle/agent/`](kaggle/agent/README.md)（純 Python 3.9+ stdlib），**核心 `SOUND` 檔案維持零耦合、零改動**：
+
+* **領域無關量化與空間橋接（`modules/common/`）**：
+  * [`compute_bridge.py`](modules/common/compute_bridge.py)：精確有理數 `Fraction` DAG 求值、`pro_rata` 守恆配置、`recur_fold`、`solve_linear`、雙向 `SOUND` 節點閘控、`flow_aux[38][8]` (`CB_AUX01`) Merkle 封印、`FLOW` `"FIR1"` 整數子集降階，以及零 `import` Lean 4 `decide` 證明產出。
+  * [`spatial_bridge.py`](modules/common/spatial_bridge.py)：平面深度異常突刺（`planar_depth`）、多槽位前景遮擋連通塊（`grid_occlusion`）、多幀剛體附著偏移（`rigid_attachment`）、運動學煞停包絡（`kinematic_envelope`）與候選邊際檢定（`candidate_margin`）。
+  * 領域模組驗證：`make -C modules verify`（包含稅務／會計 `20/20` MCQ 基準測試與 [`modules/narrative/`](modules/narrative/README.md) 敘事與多 NPC 原型）。
+* **Kaggle Gemma 4 Developer Agent 閘門與實測套件（[`kaggle/agent/`](kaggle/agent/README.md)）**：
+  * `adk_pack/`：符合 `adk-submission` YAML 規範的可攜式 ADK 配置與獨立 `gate_cli.py` 技能；透過 `make -C kaggle/agent verify` 一鍵驗證對抗情境、`ffi == cli == portable` 三路位元一致性與打包 `submission.zip` / Colab bundle。
+  * **Colab A100 80GB (`google/gemma-4-31B-it` BF16) 真 LLM v1 實測記錄**（見 [`kaggle/agent/benchmarks/gemma4_31b_a100_v1.json`](kaggle/agent/benchmarks/gemma4_31b_a100_v1.json)）：
+    * **Track 1 (`Compute Bridge`)**：12/12 合法 JSON DAG 編譯（**100%**），可解題準確率與 Baseline 同為 9/9（100%），**缺值止損率從 66.67%（Baseline 對缺失殘值腦補為 `0` 錯答 `240000`）提升至 100%（`penumbraOpen`）**，平均輸出 Token 由 `311.92` 降至 `94.50`（**節省 `69.7%`**）。
+    * **Track 2 (`Red-Team Control`)**：在 10 題直白文字 red-team 控制組上，`gemma-4-31B-it` 與 `SOUND Ring-0` 皆為 `0.0%` unsafe approval 與 `0.0%` false reject。
+    * **Track 3 (`SWE Workspace Gate`, FastAPI `tasks.jsonl`)**：Baseline `gemma-4-31B-it` 在未跑回歸測試案例 `fastapi_15661_skip_reg` 誤核准提交（**`25.0%` 誤放行率**），`SoundCodingGate` 維持 **`0.0%` 誤放行率 / `0.0%` 誤擋率 / `0` LLM tokens**。
+  * **擴展 5-Track 基準評測（`ab_eval_runner.py` v2 + `swe_loop_eval.py`）**：已擴展至 24 題長鏈與多層條件精算、18 題隱蔽紅隊含 **NL → LLM Arena Proposer → `SOUND Ring-0`** 端到端鏈路、12 題 SWE Gate、8 題多模態 PNG 視覺 `Spatial Bridge`（Track 4），以及 4 題含獨立 Container-B 隱藏測試的多輪 SWE 工具迴圈（Track 5）。

@@ -2,6 +2,8 @@
 
 __all__ = [
     "arena_codec",
+    "compute_bridge",
+    "spatial_bridge",
     "tripwires",
     "mcq_engine",
 ]

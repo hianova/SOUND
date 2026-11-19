@@ -19,6 +19,10 @@ SOUND_FIR_BYTES = 2144
 SOUND_MAX_NODES = 64
 SOUND_MAX_CLAUSES = 8
 SOUND_LABEL_BYTES = 32
+SOUND_FLOW_AUX_SLOT = 218
+SOUND_FLOW_AUX_CELLS = 38
+SOUND_FLOW_AUX_OFFSET = SOUND_FLOW_AUX_SLOT * 64
+SOUND_FLOW_AUX_WORDS = SOUND_FLOW_AUX_CELLS * 8
 
 FNV1A_OFFSET = 0xCBF29CE484222325
 FNV1A_PRIME = 0x00000100000001B3
@@ -269,6 +273,16 @@ def _configure_libsound(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.sound_ring0_searu_repair.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint32]
     lib.sound_ring0_searu_repair.restype = ctypes.c_uint32
 
+    lib.sound_ring0_apply_potestative.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.c_bool,
+        ctypes.c_bool,
+        ctypes.c_bool,
+        ctypes.c_bool,
+    ]
+    lib.sound_ring0_apply_potestative.restype = ctypes.c_uint32
+
     lib.sound_ring0_apply_declarative.argtypes = [
         ctypes.c_void_p,
         ctypes.c_uint32,
@@ -353,6 +367,19 @@ def read_normative_state(arena_bytes: bytes) -> NormativeStateSnapshot:
         voidable_mask=voidable_mask,
         rescission_power_mask=rescission_power_mask,
     )
+
+
+def read_flow_aux_words(
+    arena_bytes: bytes, count: int = SOUND_FLOW_AUX_WORDS
+) -> List[int]:
+    """Read `count` little-endian `uint64` words from cells 218..255 (`flow_aux`)."""
+    if len(arena_bytes) != SOUND_ARENA_BYTES:
+        raise ValueError(f"Expected {SOUND_ARENA_BYTES}B arena, got {len(arena_bytes)}B")
+    if not (0 <= count <= SOUND_FLOW_AUX_WORDS):
+        raise ValueError(f"flow_aux count must be in 0..{SOUND_FLOW_AUX_WORDS}, got {count}")
+    if count == 0:
+        return []
+    return list(struct.unpack_from(f"<{count}Q", arena_bytes, SOUND_FLOW_AUX_OFFSET))
 
 
 def _parse_seed_u64(seed: Optional[str]) -> int:
@@ -450,6 +477,7 @@ def encode_arena(
     duty_neg_mask: int = 0,
     voidable_mask: int = 0,
     rescission_power_mask: int = 0,
+    flow_aux_words: Optional[Sequence[int]] = None,
 ) -> bytes:
     """Serialize and FNV-1a Merkle-seal a 16,384B `"SND2"` SoundArena."""
     num_nodes = len(nodes)
@@ -526,6 +554,19 @@ def encode_arena(
         voidable_mask & 0xFFFFFFFFFFFFFFFF,
         rescission_power_mask & 0xFFFFFFFFFFFFFFFF,
     )
+
+    if flow_aux_words is not None:
+        if len(flow_aux_words) > SOUND_FLOW_AUX_WORDS:
+            raise ValueError(
+                f"flow_aux allows at most {SOUND_FLOW_AUX_WORDS} uint64 words, got {len(flow_aux_words)}"
+            )
+        for w_idx, word in enumerate(flow_aux_words):
+            struct.pack_into(
+                "<Q",
+                buf,
+                SOUND_FLOW_AUX_OFFSET + w_idx * 8,
+                int(word) & 0xFFFFFFFFFFFFFFFF,
+            )
 
     # FNV-1a Merkle over cells 1..255 (bytes 64..16384)
     merkle_root = fnv1a_64(bytes(buf[64:SOUND_ARENA_BYTES]))
@@ -797,6 +838,40 @@ def lift_fir_arena_bytes(
         mult_depth=int(m.group(5)),
         raw_output=proc.stdout,
     )
+
+
+def apply_potestative_arena_bytes(
+    arena_bytes: bytes,
+    sound_bin: Path,
+    *,
+    slot: int,
+    grant_pos: bool = False,
+    revoke_pos: bool = False,
+    grant_neg: bool = False,
+    revoke_neg: bool = False,
+) -> Tuple[bytes, int, NormativeStateSnapshot]:
+    """Execute C17 `sound_ring0_apply_potestative` + re-seal via in-memory `libsound` FFI."""
+    lib = _use_ffi_backend(sound_bin, "ffi")
+    assert lib is not None
+    buf = _AlignedArenaBuffer(arena_bytes)
+    rc_ver = lib.sound_ring0_arena_verify(buf.ptr)
+    if rc_ver != 0:
+        raise SoundVerifyError(
+            f"SoundArena verify failed (err={rc_ver} {SOUND_ERR_MAP.get(rc_ver, '')})"
+        )
+    rc = int(
+        lib.sound_ring0_apply_potestative(
+            buf.ptr,
+            slot,
+            bool(grant_pos),
+            bool(revoke_pos),
+            bool(grant_neg),
+            bool(revoke_neg),
+        )
+    )
+    lib.sound_ring0_arena_seal(buf.ptr)
+    sealed = buf.read()
+    return sealed, rc, read_normative_state(sealed)
 
 
 def apply_declarative_arena_bytes(

@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sound.local/modules/common/spatial_bridge_contract.json",
+  "title": "SOUND Spatial, Physical Invariant, and Margin Bridge Contract",
+  "description": "Domain-free geometric, planar depth, 2D slot-grid topology, multi-frame rigid attachment, kinematic envelope, and multi-candidate margin specification.",
+  "system_instructions": [
+    "Do NOT guess obscured regions or pick the top argmax candidate when confidence margins are narrow.",
+    "Submit planar_depth, grid_occlusion, rigid_attachment, kinematic_envelope, and candidate_margin measurements through this contract.",
+    "Map geometric flags via predicate_bindings directly onto SoundArena node labels so C17 Ring-0 enforces epistemic uncertainty (penumbraOpen), attack defeat, Hume separation, and authority immunity."
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "aux_scale": { "type": "integer", "minimum": 0, "maximum": 12, "default": 4 },
+    "planar_depth": {
+      "type": "object",
+      "properties": {
+        "samples": { "type": "array" },
+        "max_plane_dev": { "type": ["number", "string"], "default": "25" },
+        "near_occlusion_delta": { "type": ["number", "string"], "default": "60" },
+        "min_occluder_samples": { "type": "integer", "minimum": 1, "default": 1 },
+        "min_coverage": { "type": ["number", "string"], "default": "0.5" }
+      }
+    },
+    "grid_occlusion": {
+      "type": "object",
+      "properties": {
+        "bitmap": { "type": "array" },
+        "num_slots": { "type": "integer", "minimum": 1, "default": 4 },
+        "fg_threshold": { "type": ["number", "string"], "default": 128 },
+        "dark_is_fg": { "type": "boolean", "default": true },
+        "expected_ink_min": { "type": ["number", "string"], "default": "0.05" },
+        "expected_ink_max": { "type": ["number", "string"], "default": "0.55" },
+        "border_band_px": { "type": "integer", "minimum": 0, "default": 1 }
+      }
+    },
+    "rigid_attachment": {
+      "type": "object",
+      "properties": {
+        "frames": { "type": "array" },
+        "max_rel_jitter": { "type": ["number", "string"], "default": "0.05" },
+        "min_frames": { "type": "integer", "minimum": 1, "default": 3 },
+        "min_target_motion": { "type": ["number", "string"], "default": "0" }
+      }
+    },
+    "kinematic_envelope": {
+      "type": "object",
+      "properties": {
+        "speed": { "type": ["number", "string"] },
+        "max_decel": { "type": ["number", "string"] },
+        "distance": { "type": ["number", "string"] },
+        "reaction_time": { "type": ["number", "string"], "default": 0 }
+      }
+    },
+    "candidate_margin": {
+      "type": "object",
+      "properties": {
+        "candidates": { "type": "array" },
+        "min_top_score": { "type": ["number", "string"], "default": "0.6" },
+        "min_margin": { "type": ["number", "string"], "default": "0.15" }
+      }
+    },
+    "predicate_bindings": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

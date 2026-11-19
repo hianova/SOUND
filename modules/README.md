@@ -12,12 +12,17 @@
 ```text
 modules/
 ├── README.md
+├── Makefile                    # make -C modules verify
 ├── common/
 │   ├── __init__.py
-│   ├── arena_codec.py          # 16,384B SoundArena 二進位編碼、FNV-1a Merkle 封印與 build/sound CLI 橋接
+│   ├── arena_codec.py          # 16,384B SoundArena 二進位編碼、flow_aux[38][8] 讀寫、ctypes FFI 與 build/sound CLI 橋接
+│   ├── compute_bridge.py       # 領域無關有理數 Fraction DAG 求值、pro_rata 守恆、CB_AUX01 封印、FIR1 降階與 Lean 4 證明
+│   ├── compute_bridge_contract.json
+│   ├── spatial_bridge.py       # 領域無關平面深度、多槽位遮擋、剛體附著、運動學煞停包絡與候選邊際檢定
+│   ├── spatial_bridge_contract.json
 │   ├── tripwires.py            # 輕量高精準多語詞面引線（題幹極性反轉、絕對詞、未成就/假設詞、但書範圍詞）
 │   ├── mcq_engine.py           # Topic Pack 驗證、選項編譯、Hume/Presup/Exception/Penumbra 陷阱分類與作答
-│   ├── cli.py                  # 命令列工具（packs / benchmark / solve）
+│   ├── cli.py                  # 命令列工具（packs / benchmark / solve / compute / spatial）
 │   └── proposer_contract.json  # Stage 2 外部 LLM Proposer 輸出 JSON Schema 契約（無廠商綁定）
 ├── taxation/
 │   ├── packs/
@@ -32,7 +37,9 @@ modules/
 │   └── benchmarks/
 │       └── tw_accounting_mcq.json       # 10 題台灣初會 / IFRS 基礎無運算選擇題（40 選項）
 └── tests/
-    └── test_modules.py         # 端到端編解碼防篡改、20 題／80 選項基準測試與核心零耦合檢查
+    ├── test_modules.py         # 端到端編解碼防篡改、20 題／80 選項基準測試、FFI/CLI 一致性與核心零耦合檢查
+    ├── test_compute_bridge.py  # 有理數守恆、雙向 SOUND 閘控、CB_AUX01 封印、FIR1 C17 對等與 Lean 4 證明測試
+    └── test_spatial_bridge.py  # 平面深度、網格遮擋、剛體附著、煞停包絡與世界治理 Arena 測試
 ```
 
 ---
@@ -67,14 +74,25 @@ python3 -m modules.common.cli benchmark --all --verbose
 # 3. 單題除錯檢視每個節點之 SOUND 狀態與 reason 位元遮罩
 python3 -m modules.common.cli solve modules/taxation/benchmarks/tw_tax_mcq.json TW_TAX_VAT_01
 
-# 4. 執行完整 unittest 套件
+# 4. 執行領域無關 Compute Bridge（支援 --sound-verify / --lean-cert / --fir-out）
+python3 -m modules.common.cli compute - --sound-verify <<'EOF'
+{"vars":{"p":100000,"r":"0.05"},"exprs":{"res":["recur_fold","p",3,["mul","s",["add",1,"r"]],"s","k"]},"predicates":{"ok":["gt","res",110000]}}
+EOF
+
+# 5. 執行領域無關 Spatial Bridge（支援 --sound-verify）
+python3 -m modules.common.cli spatial - --sound-verify <<'EOF'
+{"kinematic_envelope":{"speed":25,"max_decel":5,"distance":40},"predicate_bindings":{"fact_stop":"can_stop"}}
+EOF
+
+# 6. 執行完整 unittest 套件
 python3 -m unittest discover -s modules/tests -v
 ```
 
 ---
 
-## Stage 2：如何對接外部 LLM Proposer
+## Stage 2：如何對接外部 LLM Proposer 與量化／空間雙橋
 
-在雙層架構中，`modules/common/proposer_contract.json` 定義了不綁定特定廠商 SDK 的結構化意圖契約：
-1. 外部 LLM 只負責讀取純文字題幹與某個 Topic Pack 的 `nodes` / `aliases` 清單，將題幹與四個選項映射為節點 ID、`unverified_facts`、`universal_scope` 與 `claim` 結構（嚴禁由 LLM 自行猜答案或進行數值計算）。
-2. 所有邏輯推導、例外擊敗、休謨防火牆與前提檢查統一交由 `modules/common/mcq_engine.py` 編譯成 `16,384B` `.snd` 並交給 `./build/sound verify` 做出可稽核、可重現的形式判決。
+在雙層架構中，外部 LLM 嚴禁在自然語言輸出中自行心算或擅自宣告授權：
+1. **規則與條文選擇（[`proposer_contract.json`](common/proposer_contract.json)）**：LLM 只負責將純文字題幹映射為 Topic Pack 節點 ID、`unverified_facts`、`universal_scope` 與 `claim`，交由 `mcq_engine.py` ＋ `./build/sound` 做出可稽核的形式判決。
+2. **精確有理數計算（[`compute_bridge.py`](common/compute_bridge.py) / [`compute_bridge_contract.json`](common/compute_bridge_contract.json)）**：LLM 只輸出精簡 JSON DAG（缺值設 `null`），由 `Fraction` 引擎求確值並依 `SOUND` 節點雙向閘控；缺值或除零自動傳遞成 `penumbraOpen`，整數子集可降階至 `FLOW` `"FIR1"` 與無 `import` 的 Lean 4 `decide` 證明。
+3. **空間幾何與感測檢定（[`spatial_bridge.py`](common/spatial_bridge.py) / [`spatial_bridge_contract.json`](common/spatial_bridge_contract.json)）**：將感知層輸入的深度採樣、遮擋點陣、邊界框序列、煞停參數與候選分數轉成確定性布林／半影謂詞，寫入 `16,384B` `SoundArena` 再交由 `SOUND` Ring-0 裁決。

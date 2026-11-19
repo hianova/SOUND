@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sound.local/modules/common/compute_bridge_contract.json",
+  "title": "SOUND x FLOW Quantitative Compute Bridge Input Contract",
+  "description": "Domain-free declarative arithmetic, vector conservation, bounded recurrence, linear solve, and predicate AST specification executed deterministically outside the language model.",
+  "system_instructions": [
+    "Do NOT perform arithmetic, rounding, multi-step recurrence, or algebraic solving inline in tokens.",
+    "Emit a compact JSON compute specification under this schema instead.",
+    "Bind known quantities in 'vars' using integer, exact decimal strings (e.g. '0.05'), rational strings ('9/12'), 1D arrays of numbers, or null when missing/unknown.",
+    "Build intermediate values in 'exprs' with operators: add, sub, mul, div, neg, abs, min, max, pow_int, if_else, sum, dot, get, pro_rata, recur_fold, round_half_up, round_half_even, floor, ceil, solve_linear.",
+    "Attach 'guards' mapping an expression name to a SoundArena node label when execution must be gated by normative node establishment.",
+    "Express boolean facts or conservation checks in 'predicates' using: eq, ne, lt, le, gt, ge, approx_eq, in_range, sum_eq, and, or, not."
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["vars", "exprs"],
+  "properties": {
+    "aux_scale": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 12,
+      "default": 4
+    },
+    "vars": {
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "null" },
+          { "type": "integer" },
+          { "type": "number" },
+          { "type": "string" },
+          {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                { "type": "integer" },
+                { "type": "number" },
+                { "type": "string" }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "exprs": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "guards": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_]{1,31}$"
+      }
+    },
+    "predicates": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1
+      }
+    }
+  }
+}

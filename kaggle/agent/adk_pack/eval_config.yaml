@@ -1,0 +1,6 @@
+# Per-task evaluation budget aligned with swegemma harness limits.
+evaluation:
+  timeout_seconds: 300
+  max_tool_calls: 40
+  max_time_minutes: 10
+  max_turns: 50

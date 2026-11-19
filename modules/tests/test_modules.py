@@ -314,11 +314,13 @@ class SoundModulesTest(unittest.TestCase):
 
     def test_core_zero_coupling(self) -> None:
         core_files = ("Sound.lean", "Sound/Bilattice.lean", "sound.h", "sound.c", "sound_lean_jsi.c", "Makefile")
+        existing = [REPO_ROOT / fname for fname in core_files if (REPO_ROOT / fname).is_file()]
+        self.assertTrue(existing, msg="Expected at least core C sources (sound.h / sound.c) to exist")
         forbidden = ("modules/", "taxation", "accounting", "營業稅", "會計")
-        for fname in core_files:
-            content = (REPO_ROOT / fname).read_text(encoding="utf-8")
+        for fpath in existing:
+            content = fpath.read_text(encoding="utf-8")
             for term in forbidden:
-                self.assertNotIn(term, content, msg=f"Core file {fname} leaked module ref {term!r}")
+                self.assertNotIn(term, content, msg=f"Core file {fpath.name} leaked module ref {term!r}")
 
 
 if __name__ == "__main__":

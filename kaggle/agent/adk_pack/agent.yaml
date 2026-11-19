@@ -1,0 +1,20 @@
+name: sound_developer_agent
+model: gemma-4-31b-it-qat-w4a16-ct
+description: >
+  Deterministic SOUND Ring-0 epistemic & normative gate for software engineering agents.
+  Prevents unverified root-cause guesses, Hume Is-to-Ought leaps, syntax breakages,
+  and skipped regression checks prior to patch submission.
+instruction: !include prompts/system.md
+skills:
+  - skills/sound_gate
+tools:
+  - run_command
+  - read_file
+  - edit_file
+  - write_file
+  - get_status
+  - submit_patch
+  - get_code_neighbors
+  - search_similar_code
+  - get_code_subgraph
+generate_content_config: !include configs/sampling.yaml

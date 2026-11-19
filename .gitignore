@@ -13,3 +13,12 @@ build/
 .agents/
 __pycache__/
 *.pyc
+
+# Kaggle Gemma 4 dataset & generated agent build/submission artifacts
+kaggle/data/
+kaggle/agent/build/
+kaggle/submissions/
+kaggle/*.zip
+*.tgz
+*.whl
+*.npz
