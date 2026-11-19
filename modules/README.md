@@ -52,9 +52,12 @@ modules/
 
 ## 快速執行
 
-請先確保核心 `build/sound` 已編譯（若尚未編譯，在倉庫根目錄執行 `make all`）：
+請先確保核心 `build/sound` 與純 C 共享庫 `build/libsound.dylib`（或 `.so`）已編譯（若尚未編譯，在倉庫根目錄執行 `make all`）；[arena_codec.py](common/arena_codec.py) 會自動優先走 `ctypes` 記憶體零 I/O FFI（微秒級），找不到共享庫時無縫退回 `./build/sound` CLI：
 
 ```bash
+# 0. 透過獨立 modules/Makefile 一鍵驗證全部領域模組（與根目錄 Makefile 零耦合）
+make -C modules verify
+
 # 1. 列出並驗證全部 Topic Pack（含 64 節點預算檢查）
 python3 -m modules.common.cli packs
 

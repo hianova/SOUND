@@ -1,0 +1,256 @@
+{
+  "pack_id": "royal_court_hearing",
+  "domain": "narrative",
+  "standard": "SOUND Narrative Lore, Hohfeld KanLock & Voidable/Rescission Pack v1.0",
+  "version": "1.0.0",
+  "title": "王都聽證會：灰鐘鎮特赦審理",
+  "synopsis": "承接《灰鐘鎮編年史》第二幕：冒險者進入王都最高聽證庭。若以偽造聯署欺瞞大法官簽署臨時調查通行證，該授權進入 Voidable 狀態，揭露後大法官可合法行使撤銷權（Rescission）徹底拔除通行證並翻臉；唯有匯入前一幕證成的清白與真兇跨場景帳本旗標，方能締造不可撤銷的王室特赦令。",
+  "nodes": [
+    {
+      "id": "law_crown_court",
+      "role": "statute_root",
+      "sort": "normative",
+      "evid": "enacted_norm",
+      "title": "王都最高聽證庭審理律",
+      "description": "王都最高聽證庭程序合法性與偽證追訴準則",
+      "clauses": [[]]
+    },
+    {
+      "id": "law_provisional_pass",
+      "role": "statute_root",
+      "sort": "normative",
+      "evid": "enacted_norm",
+      "title": "臨時調查通行證核發律",
+      "description": "允許在案件審查期間基於申請文書核發臨時通行權限",
+      "clauses": [[]]
+    },
+    {
+      "id": "law_royal_pardon_act",
+      "role": "statute_root",
+      "sort": "normative",
+      "evid": "enacted_norm",
+      "title": "王室平反特赦法典",
+      "description": "憑確鑿洗冤與真兇定論頒布永久平反特赦令之成文法典",
+      "clauses": [[]]
+    },
+    {
+      "id": "law_crown_secret_seal",
+      "role": "statute_root",
+      "sort": "normative",
+      "evid": "enacted_norm",
+      "title": "王冠秘印保護鐵律",
+      "description": "受王國憲制不可侵害鎖（KanLock Immunity）保護之核心禁忌印璽",
+      "clauses": [[]]
+    },
+    {
+      "id": "fact_court_in_session",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "王都聽證庭正式開庭",
+      "description": "大法官坐堂開庭，構成有效公務宣示場合"
+    },
+    {
+      "id": "fact_forged_petition",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "偽造的教會聯署書",
+      "description": "經冒用簽章製成的急件請願書，表面形式看似完備"
+    },
+    {
+      "id": "fact_forgery_exposed",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "宮廷印泥偽造鑑定鐵證",
+      "description": "宮廷鑑識官驗出聯署書上蠟印摻假，真意與事實不符"
+    },
+    {
+      "id": "fact_wl_vane_innocent",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "跨場景旗標：范恩洗冤",
+      "description": "由灰鐘鎮 WorldLedger 匯入之『范恩入火救人無罪』確定事實"
+    },
+    {
+      "id": "fact_wl_abbot_culprit",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "跨場景旗標：院長真兇",
+      "description": "由灰鐘鎮 WorldLedger 匯入之『代理院長焚塔滅跡』確定事實"
+    },
+    {
+      "id": "fact_wl_crypt_key_held",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "跨場景旗標：持墓室銅鑰",
+      "description": "由灰鐘鎮 WorldLedger 匯入之『守鐘人已交付墓室銅鑰』物證憑據"
+    },
+    {
+      "id": "fact_crown_whisper",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "title": "王室秘聞：古鐘舊約風聲",
+      "description": "宮廷檔案庫流傳的零碎密語，指王室與古鐘鎮另有隱約關聯"
+    },
+    {
+      "id": "intent_forged_oath",
+      "role": "rule",
+      "sort": "institutional",
+      "evid": "direct",
+      "constitutive": true,
+      "title": "以聯署書申請臨時通行",
+      "description": "申請人當庭提出聯署請願書所構成之宣告性申請意思表示",
+      "clauses": [["law_provisional_pass", "fact_forged_petition"]]
+    },
+    {
+      "id": "duty_provisional_pass",
+      "role": "effect",
+      "sort": "normative",
+      "evid": "direct",
+      "title": "臨時調查通行證權限",
+      "description": "大法官基於聯署請願簽發之可撤銷臨時調查通行證",
+      "presup": ["intent_forged_oath"],
+      "clauses": [["law_provisional_pass", "intent_forged_oath"]]
+    },
+    {
+      "id": "rule_provisional_valid",
+      "role": "rule",
+      "sort": "normative",
+      "evid": "direct",
+      "title": "臨時調查證現行效力",
+      "description": "受臨時調查通行證支撐之有效通行資格",
+      "presup": ["duty_provisional_pass"],
+      "clauses": [["law_provisional_pass", "duty_provisional_pass"]]
+    },
+    {
+      "id": "intent_truth_petition",
+      "role": "rule",
+      "sort": "institutional",
+      "evid": "direct",
+      "constitutive": true,
+      "title": "正式平反特赦請願宣示",
+      "description": "彙整灰鐘鎮鐵證案卷提出之完全真實平反宣示",
+      "clauses": [
+        [
+          "law_royal_pardon_act",
+          "fact_wl_vane_innocent",
+          "fact_wl_abbot_culprit"
+        ]
+      ]
+    },
+    {
+      "id": "duty_royal_pardon",
+      "role": "effect",
+      "sort": "normative",
+      "evid": "direct",
+      "title": "頒發永久王室特赦令",
+      "description": "憑雙重確定真相與守鐘人憑據核發之終局確定特赦令",
+      "presup": [
+        "fact_wl_vane_innocent",
+        "fact_wl_abbot_culprit",
+        "fact_wl_crypt_key_held"
+      ],
+      "clauses": [
+        [
+          "law_royal_pardon_act",
+          "intent_truth_petition",
+          "fact_wl_crypt_key_held"
+        ]
+      ]
+    },
+    {
+      "id": "duty_crown_seal",
+      "role": "effect",
+      "sort": "normative",
+      "evid": "direct",
+      "title": "交出王室最高秘印權杖",
+      "description": "受 KanLock 不可侵犯鎖保護，聽證大法官亦絕對不得動搖",
+      "clauses": [["law_crown_secret_seal", "fact_court_in_session"]]
+    },
+    {
+      "id": "rule_forgery_invalid",
+      "role": "rule",
+      "sort": "normative",
+      "evid": "direct",
+      "title": "詐欺文書當依法追訴撤銷",
+      "description": "印泥鑑識揭穿偽造後，原基於瑕疵真意之處分應行使撤銷權",
+      "presup": ["fact_forgery_exposed"],
+      "clauses": [["law_crown_court", "fact_forgery_exposed"]]
+    },
+    {
+      "id": "rule_pardon_verified",
+      "role": "rule",
+      "sort": "normative",
+      "evid": "direct",
+      "title": "平反特赦效力永久成立",
+      "description": "經王都聽證庭核實之平反結果永久記入國史",
+      "presup": ["duty_royal_pardon"],
+      "clauses": [["law_royal_pardon_act", "duty_royal_pardon"]]
+    },
+    {
+      "id": "pen_crown_bell_tie",
+      "role": "penumbra",
+      "sort": "normative",
+      "evid": "direct",
+      "penumbra": true,
+      "title": "王室與聖鐘古約之隱秘關聯",
+      "description": "初代王冠是否參與鎮壓鐘下沉睡者，留待第三章揭曉之半影線索",
+      "clauses": [["law_crown_secret_seal", "fact_crown_whisper"]]
+    }
+  ],
+  "public_facts": [
+    "fact_court_in_session"
+  ],
+  "full_truth_facts": [
+    "fact_court_in_session",
+    "fact_wl_vane_innocent",
+    "fact_wl_abbot_culprit",
+    "fact_wl_crypt_key_held",
+    "fact_forgery_exposed"
+  ],
+  "intentional_rashomon": [],
+  "ledger_imports": {
+    "wl_vane_innocent": "fact_wl_vane_innocent",
+    "wl_abbot_culprit": "fact_wl_abbot_culprit",
+    "wl_crypt_key_held": "fact_wl_crypt_key_held"
+  },
+  "items": [
+    {
+      "item_id": "item_forged_petition",
+      "name": "偽造的灰鐘聯署書",
+      "slot_kind": "欺瞞物證・偽造文書",
+      "unlocks_facts": ["fact_forged_petition"],
+      "rumor_nodes": [],
+      "penumbra_nodes": [],
+      "base_flavor": "仿造灰鐘執事火漆印製的急件文書，急躁之間足以矇騙大法官簽發可撤銷的臨時通行證。"
+    },
+    {
+      "item_id": "item_royal_ink_audit",
+      "name": "宮廷印泥鑑識報告書",
+      "slot_kind": "司法鑑定・反制證物",
+      "unlocks_facts": ["fact_forgery_exposed"],
+      "rumor_nodes": [],
+      "penumbra_nodes": ["pen_crown_bell_tie"],
+      "base_flavor": "宮廷書記室比對松煙配方的鑑識卷宗，一眼揪出聯署書上的火漆印泥純屬事後偽造。",
+      "cryptic_hint": "鑑識官在卷尾多註了一筆皇家舊檔編號，卻被主審以紅蠟密封，無人敢問出處。"
+    }
+  ],
+  "npcs": [
+    {
+      "npc_id": "npc_magistrate",
+      "name": "賽維爾",
+      "role_title": "王都大法官",
+      "known_facts": ["fact_court_in_session"],
+      "rumor_facts": ["fact_crown_whisper"],
+      "power_nodes": ["duty_provisional_pass", "duty_royal_pardon"],
+      "immunity_nodes": ["duty_crown_seal"],
+      "searu_seed": "0x4D41474953545231"
+    }
+  ]
+}

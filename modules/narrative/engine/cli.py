@@ -11,6 +11,7 @@ from modules.common.arena_codec import load_schema_hash
 
 from .lore_engine import audit_lore_pack, compile_item_cards, load_lore_pack
 from .npc_runtime import NarrativeWorldRuntime, SpeechAct
+from .world_ledger import WorldLedger
 
 
 def _repo_root() -> Path:
@@ -19,6 +20,10 @@ def _repo_root() -> Path:
 
 def _default_pack_path() -> Path:
     return Path(__file__).resolve().parents[1] / "packs" / "ashen_bell_chronicle.json"
+
+
+def _default_scene2_pack_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "packs" / "royal_court_hearing.json"
 
 
 def _default_sound_bin(repo_root: Path) -> Path:
@@ -119,6 +124,97 @@ def _cmd_demo(pack: Dict[str, Any], sound_bin: Path, schema_hash: int) -> int:
     return 0
 
 
+def _cmd_campaign(
+    scene1_pack: Dict[str, Any],
+    scene2_pack: Dict[str, Any],
+    sound_bin: Path,
+    schema_hash: int,
+) -> int:
+    print("=== [Two-Scene Campaign + Voidable/Rescission + WorldLedger] ===")
+    rt1 = NarrativeWorldRuntime(scene1_pack, sound_bin, schema_hash)
+    rt1.present_item("npc_warden", "item_vane_rescue_order")
+    rt1.present_item("npc_warden", "item_charred_oil_flask")
+    rt1.present_item("npc_warden", "item_abbot_confession")
+    rt1.request_action("npc_warden", "act_grant_crypt_key", extra_facts=["ev_warden_oath_signed"])
+
+    ledger = WorldLedger()
+    exported = rt1.export_npc_to_ledger(
+        "npc_warden",
+        ledger,
+        {
+            "truth_vane_innocent": "wl_vane_innocent",
+            "truth_abbot_culprit": "wl_abbot_culprit",
+            "act_grant_crypt_key": "wl_crypt_key_held",
+        },
+    )
+    print(f"\n[Scene 1 -> WorldLedger] 匯出全局旗標: {exported}")
+
+    # Deception branch in Scene 2 (fresh magistrate without WorldLedger truth)
+    print("\n--- [分支 A] 欺騙立約 → Voidable → 敗露後 C17 撤銷反目 (Rescission) ---")
+    rt2_fraud = NarrativeWorldRuntime(scene2_pack, sound_bin, schema_hash)
+    rt2_fraud.present_item("npc_magistrate", "item_forged_petition")
+    _print_act(
+        "A.1 私下非正式場合誘簽臨時通行證（缺構成要件場合）",
+        rt2_fraud.sign_declarative_pact(
+            "npc_magistrate",
+            "intent_forged_oath",
+            "duty_provisional_pass",
+            in_constitutive_context=False,
+            internal_will_matches=False,
+        ),
+    )
+    _print_act(
+        "A.2 當庭呈遞偽造聯署書欺騙簽署（成功核發但標記 Voidable + RescissionPower）",
+        rt2_fraud.sign_declarative_pact(
+            "npc_magistrate",
+            "intent_forged_oath",
+            "duty_provisional_pass",
+            in_constitutive_context=True,
+            internal_will_matches=False,
+        ),
+    )
+    _print_act(
+        "A.3 宮廷鑑識揭穿印泥偽造，行使 C17 Rescission 撤銷通行證並反目",
+        rt2_fraud.rescind_deceptive_pact(
+            "npc_magistrate",
+            "intent_forged_oath",
+            "duty_provisional_pass",
+        ),
+    )
+
+    # Truth branch in Scene 2 (importing verified Scene 1 outcomes via WorldLedger)
+    print("\n--- [分支 B] 匯入 WorldLedger 鐵證 → KanLock 防護 → 不可撤銷王室特赦 + FIR1 ---")
+    rt2_truth = NarrativeWorldRuntime(scene2_pack, sound_bin, schema_hash)
+    imported = rt2_truth.import_ledger(ledger)
+    print(f"[WorldLedger -> Scene 2] 啟動地方事實槽: {imported}")
+    _print_act(
+        "B.1 試圖越權動搖王冠秘印（KanLock Immunity 永久拒絕）",
+        rt2_truth.sign_declarative_pact(
+            "npc_magistrate",
+            "intent_truth_petition",
+            "duty_crown_seal",
+            in_constitutive_context=True,
+            internal_will_matches=True,
+        ),
+    )
+    _print_act(
+        "B.2 憑灰鐘鎮跨場景鐵證正式締造王室特赦令（Clean Binding, voidable=0）",
+        rt2_truth.sign_declarative_pact(
+            "npc_magistrate",
+            "intent_truth_petition",
+            "duty_royal_pardon",
+            in_constitutive_context=True,
+            internal_will_matches=True,
+        ),
+    )
+    mag_fir = rt2_truth.export_npc_fir_gate("npc_magistrate", repaired=False)
+    print(
+        f"\n[B.3 匯出王都大法官特赦閘門 FIR1] prog={mag_fir.prog_name} bytes={len(mag_fir.fir_bytes)}B "
+        f"active=0x{mag_fir.active_mask:x} mult_bits={mag_fir.mult_bits}"
+    )
+    return 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     repo_root = _repo_root()
     sound_bin = _default_sound_bin(repo_root)
@@ -134,6 +230,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         ("audit", "Audit Lore Pack continuity, Rashomon pairs, SEARU repair & penumbra"),
         ("items", "Compile certified Souls-like Item Lore Cards via SOUND graph diffs"),
         ("demo", "Run interactive multi-NPC epistemic fog, reversal & FIR1 gate playthrough"),
+        ("campaign", "Run Scene 1 -> WorldLedger -> Scene 2 Voidable/Rescission & Royal Pardon campaign"),
     ):
         sp = sub.add_parser(cmd_name, help=help_msg)
         sp.add_argument(
@@ -142,6 +239,13 @@ def main(argv: Optional[List[str]] = None) -> int:
             default=_default_pack_path(),
             help="Path to Narrative Lore Pack JSON",
         )
+        if cmd_name == "campaign":
+            sp.add_argument(
+                "--scene2",
+                type=Path,
+                default=_default_scene2_pack_path(),
+                help="Path to Scene 2 Narrative Lore Pack JSON",
+            )
 
     args = parser.parse_args(argv)
     pack = load_lore_pack(args.pack)
@@ -152,6 +256,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _cmd_items(pack, sound_bin, schema_hash)
     if args.command == "demo":
         return _cmd_demo(pack, sound_bin, schema_hash)
+    if args.command == "campaign":
+        scene2 = load_lore_pack(args.scene2)
+        return _cmd_campaign(pack, scene2, sound_bin, schema_hash)
     return 1
 
 

@@ -135,6 +135,8 @@ def validate_lore_pack(pack: Dict[str, Any]) -> None:
             raise LorePackError(f"intentional_rashomon entry must be 2-element list: {pair!r}")
         _require_ref(pair[0], "intentional_rashomon")
         _require_ref(pair[1], "intentional_rashomon")
+    for _gflag, lfact in pack.get("ledger_imports", {}).items():
+        _require_ref(str(lfact), f"ledger_imports[{_gflag!r}]")
 
     seen_items: Set[str] = set()
     for it in pack["items"]:

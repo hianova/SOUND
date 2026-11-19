@@ -20,13 +20,18 @@
    * **資訊不對稱與傳聞隔離**：未實證傳聞編碼為 `evid=reportative`，遭 `EVIDENTIAL_LEAF / UNVERIFIED_PRESUP` 擋下（`SKEPTICAL_RUMOR`），拒絕輕信或劇透。
    * **防嘴砲詐唬 (`Irrealis`)**：玩家「假設／如果…」誘導對話直接隔離（`BLUFF_QUARANTINED`），前後 `SoundArena` 位元完全不變。
    * **羅生門 SEARU 性格偏向**：兩派證詞對咬（`conflictUndecided`）時呼叫 `./build/sound repair` 依 NPC `searu_seed` 算出傾向立場。
-   * **Hohfeld 權限與 `2,144B` `.fir` 硬體閘門**：缺權限（`ACTION_NO_POWER`）、觸犯主線鐵律（`ACTION_IMMUNITY_LOCKED`）或缺關鍵前置（`ACTION_PREREQ_MISSING`）一律攔截；集齊條件後執行 `./build/sound lift-fir` 匯出 `2,144B` `"FIR1"` QTT 靜態權限電路。
+   * **Hohfeld 權限、`Voidable / Rescission` 與 `2,144B` `.fir` 硬體閘門**：缺權限（`ACTION_NO_POWER`）、觸犯主線鐵律（`ACTION_IMMUNITY_LOCKED`）或缺關鍵前置（`ACTION_PREREQ_MISSING`）一律攔截；若受偽證欺騙簽約（`internal_will_matches=false`），契約進 `voidable` 狀態並在揭穿後由 C17 `sound_ring0_exercise_rescission` 合法撤銷翻臉；集齊條件後執行 `lift-fir` 匯出 `2,144B` `"FIR1"` QTT 靜態權限電路。
+4. **跨場景 `WorldLedger` 接力（[world_ledger.py](engine/world_ledger.py) ↔ [royal_court_hearing.json](packs/royal_court_hearing.json)）**
+   * 只把第一章證成之少數全域真相旗標（`wl_vane_innocent`、`wl_abbot_culprit`、`wl_crypt_key_held`）映射為第二章《王都聽證會》初始 `fact_slot`，每場仍鎖死於 `16KB / <= 64 節點`。
 
 ---
 
 ## 快速執行
 
 ```bash
+# 0. 一鍵執行全部模組驗證
+make -C modules verify
+
 # 1. 稽核《灰鐘鎮編年史》世界觀連續性、羅生門與全真相收斂
 python3 -m modules.narrative.engine.cli audit
 
@@ -36,7 +41,10 @@ python3 -m modules.narrative.engine.cli items
 # 3. 執行三名 NPC 互動劇本與 2,144B FIR1 權限閘門匯出示範
 python3 -m modules.narrative.engine.cli demo
 
-# 4. 執行完整 narrative unittest 套件
+# 4. 執行雙幕跨場景 WorldLedger + 欺騙簽約 Voidable/Rescission + 永久特赦示範
+python3 -m modules.narrative.engine.cli campaign
+
+# 5. 執行完整 narrative unittest 套件
 python3 -m unittest discover -s modules/narrative/tests -v
 ```
 

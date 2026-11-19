@@ -8,9 +8,12 @@ from pathlib import Path
 
 from modules.common.arena_codec import (
     SOUND_ARENA_BYTES,
+    SOUND_FIR_BYTES,
     ArenaNodeSpec,
     SoundVerifyError,
     encode_arena,
+    lift_fir_arena_bytes,
+    load_libsound,
     load_schema_hash,
     repair_arena_bytes,
     verify_arena_bytes,
@@ -256,8 +259,61 @@ class SoundModulesTest(unittest.TestCase):
         flipped_diag = solve_question(self.packs[flipped["pack_id"]], flipped, SOUND_BIN, self.schema_hash)
         self.assertEqual(flipped_diag.predicted_answers, ["A", "C", "D"])
 
+    def test_ffi_cli_bit_exact_parity(self) -> None:
+        lib = load_libsound(SOUND_BIN)
+        self.assertIsNotNone(lib, "Expected pure-GPR build/libsound.dylib/.so to exist")
+
+        # Park Case-3-like non-conflict graph -> verify + lift-fir FFI vs CLI parity
+        park_nodes = [
+            ArenaNodeSpec(label="park_rule", sort="normative", evid="enacted_norm", clauses=[0]),
+            ArenaNodeSpec(label="sedan_ban", sort="normative", evid="direct", clauses=[1 << 0]),
+            ArenaNodeSpec(label="emergency_exc", sort="normative", evid="enacted_norm", clauses=[0]),
+            ArenaNodeSpec(label="ambulance_ban", sort="normative", evid="direct", attack_mask=(1 << 2), clauses=[1 << 0]),
+            ArenaNodeSpec(label="escooter_ban", sort="normative", evid="direct", penumbra=True, clauses=[1 << 0]),
+        ]
+        park_arena = encode_arena(park_nodes, schema_hash=self.schema_hash)
+        ev_ffi = verify_arena_bytes(park_arena, SOUND_BIN, backend="ffi")
+        ev_cli = verify_arena_bytes(park_arena, SOUND_BIN, backend="cli")
+        self.assertEqual(ev_ffi.i_star, ev_cli.i_star)
+        self.assertEqual(ev_ffi.p_star, ev_cli.p_star)
+        self.assertEqual(ev_ffi.established_mask, ev_cli.established_mask)
+        self.assertEqual(ev_ffi.defeated_mask, ev_cli.defeated_mask)
+        self.assertEqual(ev_ffi.penumbra_mask, ev_cli.penumbra_mask)
+        self.assertEqual(
+            [(n.status, n.reasons) for n in ev_ffi.nodes],
+            [(n.status, n.reasons) for n in ev_cli.nodes],
+        )
+
+        fir_ffi = lift_fir_arena_bytes(park_arena, SOUND_BIN, prog_name="parity_gate", backend="ffi")
+        fir_cli = lift_fir_arena_bytes(park_arena, SOUND_BIN, prog_name="parity_gate", backend="cli")
+        self.assertEqual(len(fir_ffi.fir_bytes), SOUND_FIR_BYTES)
+        self.assertEqual(fir_ffi.fir_bytes, fir_cli.fir_bytes)
+        self.assertEqual(fir_ffi.active_mask, fir_cli.active_mask)
+
+        # Nixon diamond -> SEARU repair + --repaired lift-fir FFI vs CLI parity
+        conf_nodes = [
+            ArenaNodeSpec(label="quaker", sort="normative", evid="enacted_norm", attack_mask=(1 << 1), clauses=[0]),
+            ArenaNodeSpec(label="republican", sort="normative", evid="enacted_norm", attack_mask=(1 << 0), clauses=[0]),
+        ]
+        conf_arena = encode_arena(conf_nodes, schema_hash=self.schema_hash)
+        rep_ffi = repair_arena_bytes(conf_arena, SOUND_BIN, seed="0x1234", backend="ffi")
+        rep_cli = repair_arena_bytes(conf_arena, SOUND_BIN, seed="0x1234", backend="cli")
+        self.assertEqual(rep_ffi.cand, rep_cli.cand)
+        self.assertEqual(rep_ffi.retract, rep_cli.retract)
+        self.assertEqual(rep_ffi.energy, rep_cli.energy)
+        self.assertEqual(rep_ffi.converged, rep_cli.converged)
+
+        rfir_ffi = lift_fir_arena_bytes(
+            conf_arena, SOUND_BIN, prog_name="nixon_rep", repaired=True, seed="0x1234", backend="ffi"
+        )
+        rfir_cli = lift_fir_arena_bytes(
+            conf_arena, SOUND_BIN, prog_name="nixon_rep", repaired=True, seed="0x1234", backend="cli"
+        )
+        self.assertEqual(rfir_ffi.fir_bytes, rfir_cli.fir_bytes)
+        self.assertEqual(rfir_ffi.active_mask, rfir_cli.active_mask)
+
     def test_core_zero_coupling(self) -> None:
-        core_files = ("Sound.lean", "sound.h", "sound.c", "sound_lean_jsi.c", "Makefile")
+        core_files = ("Sound.lean", "Sound/Bilattice.lean", "sound.h", "sound.c", "sound_lean_jsi.c", "Makefile")
         forbidden = ("modules/", "taxation", "accounting", "營業稅", "會計")
         for fname in core_files:
             content = (REPO_ROOT / fname).read_text(encoding="utf-8")

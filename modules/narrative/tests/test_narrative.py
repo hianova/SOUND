@@ -7,17 +7,19 @@ import json
 import unittest
 from pathlib import Path
 
-from modules.common.arena_codec import load_schema_hash
+from modules.common.arena_codec import load_schema_hash, read_normative_state, verify_arena_bytes
 from modules.narrative.engine.lore_engine import (
     audit_lore_pack,
     compile_item_cards,
     load_lore_pack,
 )
 from modules.narrative.engine.npc_runtime import NarrativeWorldRuntime
+from modules.narrative.engine.world_ledger import WorldLedger
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 NARRATIVE_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PACK = NARRATIVE_ROOT / "packs" / "ashen_bell_chronicle.json"
+SCENE2_PACK = NARRATIVE_ROOT / "packs" / "royal_court_hearing.json"
 SOUND_BIN = REPO_ROOT / "build" / "sound"
 
 
@@ -203,6 +205,140 @@ class SoundNarrativeTest(unittest.TestCase):
         self.assertTrue(warden_fir.fir_bytes.startswith(b"FIR1"))
         self.assertEqual(warden_fir.prog_name, "npc_warden")
         self.assertNotEqual(warden_fir.active_mask & (1 << id_to_idx["act_grant_crypt_key"]), 0)
+
+    def test_scene2_royal_court_audit(self) -> None:
+        scene2 = load_lore_pack(SCENE2_PACK)
+        self.assertLessEqual(len(scene2["nodes"]), 62)
+        rep = audit_lore_pack(scene2, SOUND_BIN, self.schema_hash)
+        self.assertTrue(rep.clean)
+        self.assertEqual(rep.accidental_contradictions, [])
+        self.assertEqual(rep.active_penumbra_hooks, ["pen_crown_bell_tie"])
+
+    def test_declarative_voidable_and_c17_rescission_lifecycle(self) -> None:
+        scene2 = load_lore_pack(SCENE2_PACK)
+        id_to_idx = {nd["id"]: idx for idx, nd in enumerate(scene2["nodes"])}
+        rt = NarrativeWorldRuntime(scene2, SOUND_BIN, self.schema_hash)
+        rt.present_item("npc_magistrate", "item_forged_petition")
+
+        # 1. Out-of-court attempt -> SOUND_ERR_MISSING_CONTEXT (7), phys_len increments to 1
+        act_ctx = rt.sign_declarative_pact(
+            "npc_magistrate",
+            "intent_forged_oath",
+            "duty_provisional_pass",
+            in_constitutive_context=False,
+            internal_will_matches=False,
+        )
+        self.assertEqual(act_ctx.stance, "PACT_MISSING_CONTEXT")
+        self.assertEqual(act_ctx.state_delta["rc"], 7)
+        self.assertEqual(act_ctx.state_delta["phys_len"], 1)
+
+        # 2. Attempt on KanLock-protected crown seal -> SOUND_ERR_IMMUNITY_LOCKED (5)
+        act_imm = rt.sign_declarative_pact(
+            "npc_magistrate",
+            "intent_forged_oath",
+            "duty_crown_seal",
+            in_constitutive_context=True,
+            internal_will_matches=True,
+        )
+        self.assertEqual(act_imm.stance, "ACTION_IMMUNITY_LOCKED")
+        self.assertEqual(act_imm.state_delta["rc"], 5)
+
+        # 3. Deceptive signing in court -> SOUND_OK, duty_pos & voidable & rescission_power set
+        act_void = rt.sign_declarative_pact(
+            "npc_magistrate",
+            "intent_forged_oath",
+            "duty_provisional_pass",
+            in_constitutive_context=True,
+            internal_will_matches=False,
+        )
+        duty_bit = 1 << id_to_idx["duty_provisional_pass"]
+        intent_bit = 1 << id_to_idx["intent_forged_oath"]
+        self.assertEqual(act_void.stance, "PACT_SIGNED_VOIDABLE")
+        self.assertEqual(act_void.state_delta["rc"], 0)
+        self.assertEqual(act_void.state_delta["duty_pos_mask"], duty_bit)
+        self.assertEqual(act_void.state_delta["voidable_mask"], duty_bit)
+        self.assertEqual(act_void.state_delta["rescission_power_mask"], duty_bit)
+
+        # 4. Present forgery audit (keeps C17 snapshot intact) + exercise C17 rescission
+        rt.present_item("npc_magistrate", "item_royal_ink_audit")
+        act_resc = rt.rescind_deceptive_pact(
+            "npc_magistrate",
+            "intent_forged_oath",
+            "duty_provisional_pass",
+        )
+        self.assertEqual(act_resc.stance, "PACT_RESCINDED_HOSTILE")
+        self.assertEqual(act_resc.sound_status, "defeated")
+        self.assertTrue(act_resc.sound_reasons & 0x02)  # SOUND_REASON_REVOKED
+        self.assertEqual(act_resc.state_delta["revoked_mask"], intent_bit)
+        self.assertEqual(act_resc.state_delta["duty_pos_mask"], 0)
+        self.assertEqual(act_resc.state_delta["voidable_mask"], 0)
+        self.assertEqual(act_resc.state_delta["rescission_power_mask"], 0)
+        self.assertEqual(act_resc.state_delta["duty_slot_status"], "defeated")
+
+        # 5. Cross-verify the live mutated 16KB snapshot with standalone C17 `build/sound verify` CLI
+        mag_snap = rt.npcs["npc_magistrate"].arena_snapshot
+        assert mag_snap is not None
+        cli_eval = verify_arena_bytes(mag_snap, SOUND_BIN, backend="cli")
+        self.assertEqual(cli_eval.nodes[id_to_idx["intent_forged_oath"]].status, "defeated")
+        self.assertTrue(cli_eval.nodes[id_to_idx["intent_forged_oath"]].reasons & 0x02)
+        self.assertEqual(cli_eval.nodes[id_to_idx["duty_provisional_pass"]].status, "defeated")
+        self.assertGreaterEqual(read_normative_state(mag_snap).phys_len, 4)
+
+    def test_world_ledger_two_scene_campaign_and_binding_pardon_fir1(self) -> None:
+        rt1 = NarrativeWorldRuntime(self.pack, SOUND_BIN, self.schema_hash)
+        rt1.present_item("npc_warden", "item_vane_rescue_order")
+        rt1.present_item("npc_warden", "item_charred_oil_flask")
+        rt1.present_item("npc_warden", "item_abbot_confession")
+        rt1.request_action("npc_warden", "act_grant_crypt_key", extra_facts=["ev_warden_oath_signed"])
+
+        ledger = WorldLedger()
+        exported = rt1.export_npc_to_ledger(
+            "npc_warden",
+            ledger,
+            {
+                "truth_vane_innocent": "wl_vane_innocent",
+                "truth_abbot_culprit": "wl_abbot_culprit",
+                "act_grant_crypt_key": "wl_crypt_key_held",
+            },
+        )
+        self.assertEqual(
+            set(exported),
+            {"wl_vane_innocent", "wl_abbot_culprit", "wl_crypt_key_held"},
+        )
+
+        scene2 = load_lore_pack(SCENE2_PACK)
+        id_to_idx2 = {nd["id"]: idx for idx, nd in enumerate(scene2["nodes"])}
+        rt2 = NarrativeWorldRuntime(scene2, SOUND_BIN, self.schema_hash)
+        imported = rt2.import_ledger(ledger)
+        self.assertEqual(
+            set(imported),
+            {"fact_wl_vane_innocent", "fact_wl_abbot_culprit", "fact_wl_crypt_key_held"},
+        )
+
+        act_bind = rt2.sign_declarative_pact(
+            "npc_magistrate",
+            "intent_truth_petition",
+            "duty_royal_pardon",
+            in_constitutive_context=True,
+            internal_will_matches=True,
+        )
+        pardon_bit = 1 << id_to_idx2["duty_royal_pardon"]
+        self.assertEqual(act_bind.stance, "PACT_SIGNED_BINDING")
+        self.assertEqual(act_bind.state_delta["rc"], 0)
+        self.assertEqual(act_bind.state_delta["duty_pos_mask"], pardon_bit)
+        self.assertEqual(act_bind.state_delta["voidable_mask"], 0)
+        self.assertEqual(act_bind.state_delta["rescission_power_mask"], 0)
+
+        fir_ffi = rt2.export_npc_fir_gate("npc_magistrate", repaired=False)
+        from modules.common.arena_codec import lift_fir_arena_bytes
+
+        snap = rt2.npcs["npc_magistrate"].arena_snapshot
+        assert snap is not None
+        fir_cli = lift_fir_arena_bytes(snap, SOUND_BIN, prog_name="npc_magistrate", backend="cli")
+        self.assertEqual(len(fir_ffi.fir_bytes), 2144)
+        self.assertTrue(fir_ffi.fir_bytes.startswith(b"FIR1"))
+        self.assertEqual(fir_ffi.fir_bytes, fir_cli.fir_bytes)
+        self.assertNotEqual(fir_ffi.active_mask & pardon_bit, 0)
 
     def test_contracts_and_core_zero_coupling(self) -> None:
         ext_contract = json.loads(

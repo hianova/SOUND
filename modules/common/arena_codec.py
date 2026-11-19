@@ -1,14 +1,15 @@
-"""Pure-stdlib encoder and `build/sound` CLI bridge for 16,384B SoundArena images."""
+"""Pure-stdlib encoder, in-memory `libsound` ctypes FFI, and `build/sound` CLI bridge."""
 
 from __future__ import annotations
 
+import ctypes
 import re
 import struct
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 SOUND_MAGIC = 0x32444E53  # "SND2"
 SOUND_VERSION = 2
@@ -24,6 +25,30 @@ FNV1A_PRIME = 0x00000100000001B3
 FALLBACK_SCHEMA_HASH = 0x9A13D2D8CB8DE1E4
 
 NODE_FLAG_CONSTITUTIVE = 1
+SOUND_EVAL_FLAGS_REQ = 0x0F
+SOUND_FIR_FLAG_USE_REPAIRED = 1
+DEFAULT_SEARU_SEED = 0x53454152555F3031
+_SOUND_FIR_MULT_BITS = 575
+_SOUND_FIR_MULT_DEPTH = 10
+
+STATUS_CODE_MAP: Dict[int, str] = {
+    0: "established",
+    1: "defeated",
+    2: "conflictUndecided",
+    3: "penumbraOpen",
+}
+
+SOUND_ERR_MAP: Dict[int, str] = {
+    0: "SOUND_OK",
+    1: "SOUND_ERR_NULL",
+    2: "SOUND_ERR_BOUNDS",
+    3: "SOUND_ERR_FORMAT",
+    4: "SOUND_ERR_MAC",
+    5: "SOUND_ERR_IMMUNITY_LOCKED",
+    6: "SOUND_ERR_NO_POWER",
+    7: "SOUND_ERR_MISSING_CONTEXT",
+    8: "SOUND_ERR_INCOHERENT",
+}
 
 SORT_MAP: Dict[str, int] = {
     "factual": 0,
@@ -158,6 +183,25 @@ class ArenaFirResult:
     raw_output: str
 
 
+@dataclass(frozen=True)
+class NormativeStateSnapshot:
+    """Header PhysLog chain & SoundNormative64 masks read from cells 0..1."""
+
+    num_nodes: int
+    phys_len: int
+    phys_head: int
+    phys_hash: int
+    merkle_root: int
+    revoked_mask: int
+    penumbra_mask: int
+    duty_pos_mask: int
+    duty_neg_mask: int
+    power_mask: int
+    immunity_mask: int
+    voidable_mask: int
+    rescission_power_mask: int
+
+
 def decode_reasons(reasons: int) -> List[str]:
     """Decode SOUND_REASON_* bitmask into ordered human-readable flag names."""
     out: List[str] = []
@@ -186,6 +230,206 @@ def load_schema_hash(repo_root: Path) -> int:
     if not m:
         return FALLBACK_SCHEMA_HASH
     return int(m.group(1), 16)
+
+
+_LIBSOUND_CACHE: Dict[Path, ctypes.CDLL] = {}
+
+
+class _AlignedArenaBuffer:
+    """64-byte aligned 16,384B host scratch buffer for zero-I/O `libsound` FFI."""
+
+    def __init__(self, initial: Optional[bytes] = None) -> None:
+        self._raw = ctypes.create_string_buffer(SOUND_ARENA_BYTES + 64)
+        base = ctypes.addressof(self._raw)
+        self._offset = (64 - (base & 63)) & 63
+        self.ptr = ctypes.c_void_p(base + self._offset)
+        assert (self.ptr.value & 63) == 0
+        if initial is not None:
+            self.write(initial)
+
+    def write(self, data: bytes) -> None:
+        if len(data) != SOUND_ARENA_BYTES:
+            raise ValueError(f"Expected {SOUND_ARENA_BYTES}B arena, got {len(data)}B")
+        ctypes.memmove(self.ptr, data, SOUND_ARENA_BYTES)
+
+    def read(self) -> bytes:
+        return bytes(self._raw[self._offset : self._offset + SOUND_ARENA_BYTES])
+
+
+def _configure_libsound(lib: ctypes.CDLL) -> ctypes.CDLL:
+    lib.sound_ring0_arena_verify.argtypes = [ctypes.c_void_p]
+    lib.sound_ring0_arena_verify.restype = ctypes.c_uint32
+
+    lib.sound_ring0_arena_seal.argtypes = [ctypes.c_void_p]
+    lib.sound_ring0_arena_seal.restype = None
+
+    lib.sound_ring0_eval.argtypes = [ctypes.c_void_p]
+    lib.sound_ring0_eval.restype = ctypes.c_uint32
+
+    lib.sound_ring0_searu_repair.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint32]
+    lib.sound_ring0_searu_repair.restype = ctypes.c_uint32
+
+    lib.sound_ring0_apply_declarative.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_bool,
+        ctypes.c_bool,
+        ctypes.c_uint64,
+    ]
+    lib.sound_ring0_apply_declarative.restype = ctypes.c_uint32
+
+    lib.sound_ring0_exercise_rescission.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_uint64,
+    ]
+    lib.sound_ring0_exercise_rescission.restype = ctypes.c_uint32
+
+    lib.sound_ring0_lift_to_fir.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_char_p,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_size_t),
+    ]
+    lib.sound_ring0_lift_to_fir.restype = ctypes.c_uint32
+    return lib
+
+
+def load_libsound(sound_bin: Path) -> Optional[ctypes.CDLL]:
+    """Load pure-GPR `build/libsound.dylib` / `libsound.so` beside `sound_bin` if present."""
+    for ext in ("dylib", "so"):
+        candidate = sound_bin.parent / f"libsound.{ext}"
+        if candidate.is_file():
+            resolved = candidate.resolve()
+            if resolved not in _LIBSOUND_CACHE:
+                _LIBSOUND_CACHE[resolved] = _configure_libsound(ctypes.CDLL(str(resolved)))
+            return _LIBSOUND_CACHE[resolved]
+    return None
+
+
+def read_normative_state(arena_bytes: bytes) -> NormativeStateSnapshot:
+    """Unpack SoundImageHeader64 (cell 0) and SoundNormative64 (cell 1) from raw 16KB bytes."""
+    if len(arena_bytes) != SOUND_ARENA_BYTES:
+        raise ValueError(f"Expected {SOUND_ARENA_BYTES}B arena, got {len(arena_bytes)}B")
+    (
+        _magic,
+        _ver,
+        num_nodes,
+        _fflags,
+        phys_len,
+        phys_head,
+        _rhdr,
+        phys_hash,
+        _shash,
+        merkle_root,
+        _rtail,
+    ) = struct.unpack_from("<IIIIIIQQQQQ", arena_bytes, 0)
+    (
+        revoked_mask,
+        penumbra_mask,
+        duty_pos_mask,
+        duty_neg_mask,
+        power_mask,
+        immunity_mask,
+        voidable_mask,
+        rescission_power_mask,
+    ) = struct.unpack_from("<8Q", arena_bytes, 64)
+    return NormativeStateSnapshot(
+        num_nodes=num_nodes,
+        phys_len=phys_len,
+        phys_head=phys_head,
+        phys_hash=phys_hash,
+        merkle_root=merkle_root,
+        revoked_mask=revoked_mask,
+        penumbra_mask=penumbra_mask,
+        duty_pos_mask=duty_pos_mask,
+        duty_neg_mask=duty_neg_mask,
+        power_mask=power_mask,
+        immunity_mask=immunity_mask,
+        voidable_mask=voidable_mask,
+        rescission_power_mask=rescission_power_mask,
+    )
+
+
+def _parse_seed_u64(seed: Optional[str]) -> int:
+    if seed is None:
+        return DEFAULT_SEARU_SEED
+    s = str(seed).strip()
+    if s.startswith(("0x", "0X")):
+        return int(s, 16) & 0xFFFFFFFFFFFFFFFF
+    return int(s, 10) & 0xFFFFFFFFFFFFFFFF
+
+
+def _parse_eval_from_arena(arena_bytes: bytes) -> ArenaEvalResult:
+    num_nodes = struct.unpack_from("<I", arena_bytes, 8)[0]
+    (
+        _node_mask,
+        i_star,
+        p_star,
+        established_mask,
+        defeated_mask,
+        conflict_mask,
+        penumbra_mask,
+        eval_flags,
+        _eval_epoch,
+    ) = struct.unpack_from("<7QII", arena_bytes, 128)
+    if (eval_flags & SOUND_EVAL_FLAGS_REQ) != SOUND_EVAL_FLAGS_REQ:
+        raise SoundVerifyError(f"Kernel invariant violation (eval_flags=0x{eval_flags:x})")
+
+    nodes: List[NodeEvalResult] = []
+    for u in range(num_nodes):
+        st_code = arena_bytes[192 + u]
+        reasons = struct.unpack_from("<I", arena_bytes, 256 + (u * 4))[0]
+        raw_lbl = arena_bytes[512 + (u * 64) + 32 : 512 + (u * 64) + 64]
+        label = raw_lbl.split(b"\x00", 1)[0].decode("ascii", errors="replace")
+        nodes.append(
+            NodeEvalResult(
+                index=u,
+                label=label,
+                status=STATUS_CODE_MAP.get(st_code, "unknown"),
+                reasons=reasons,
+            )
+        )
+
+    return ArenaEvalResult(
+        num_nodes=num_nodes,
+        i_star=i_star,
+        p_star=p_star,
+        established_mask=established_mask,
+        defeated_mask=defeated_mask,
+        conflict_mask=conflict_mask,
+        penumbra_mask=penumbra_mask,
+        nodes=nodes,
+        raw_output=(
+            f"[ffi verify] nodes={num_nodes} I*=0x{i_star:016x} P*=0x{p_star:016x} "
+            f"est=0x{established_mask:016x} def=0x{defeated_mask:016x} "
+            f"conf=0x{conflict_mask:016x} pen=0x{penumbra_mask:016x}"
+        ),
+    )
+
+
+def _parse_repair_from_arena(arena_bytes: bytes) -> ArenaRepairResult:
+    conf_in = struct.unpack_from("<Q", arena_bytes, 128 + 40)[0]
+    pinned, cand, retract, energy, iters, converged, _seed, _r0, _r1 = struct.unpack_from(
+        "<QQQQIIQQQ", arena_bytes, 217 * 64
+    )
+    return ArenaRepairResult(
+        conf_in=conf_in,
+        cand=cand,
+        retract=retract,
+        pinned=pinned,
+        energy=energy,
+        iters=iters,
+        converged=(converged == 1),
+        raw_output=(
+            f"[ffi repair] conf_in=0x{conf_in:016x} cand=0x{cand:016x} "
+            f"retract=0x{retract:016x} energy={energy} conv={converged}"
+        ),
+    )
 
 
 def _encode_label32(label: str) -> bytes:
@@ -307,10 +551,37 @@ def encode_arena(
     return bytes(buf)
 
 
-def verify_arena_bytes(arena_bytes: bytes, sound_bin: Path) -> ArenaEvalResult:
-    """Run `build/sound verify` on an in-memory 16,384B arena and parse the verdict."""
+def _use_ffi_backend(sound_bin: Path, backend: str) -> Optional[ctypes.CDLL]:
+    if backend not in ("auto", "ffi", "cli"):
+        raise ValueError(f"Unknown backend {backend!r} (expected 'auto', 'ffi', or 'cli')")
+    if backend == "cli":
+        return None
+    lib = load_libsound(sound_bin)
+    if backend == "ffi" and lib is None:
+        raise FileNotFoundError(f"Requested 'ffi' backend, but libsound not beside {sound_bin}")
+    return lib
+
+
+def verify_arena_bytes(
+    arena_bytes: bytes, sound_bin: Path, *, backend: str = "auto"
+) -> ArenaEvalResult:
+    """Verify & evaluate a 16,384B arena via in-memory `libsound` FFI or `build/sound` CLI."""
     if len(arena_bytes) != SOUND_ARENA_BYTES:
         raise ValueError(f"Expected {SOUND_ARENA_BYTES}B SoundArena, got {len(arena_bytes)}B")
+
+    lib = _use_ffi_backend(sound_bin, backend)
+    if lib is not None:
+        buf = _AlignedArenaBuffer(arena_bytes)
+        rc = lib.sound_ring0_arena_verify(buf.ptr)
+        if rc != 0:
+            raise SoundVerifyError(
+                f"SoundArena verify failed (err={rc} {SOUND_ERR_MAP.get(rc, '')})"
+            )
+        rc = lib.sound_ring0_eval(buf.ptr)
+        if rc != 0:
+            raise SoundVerifyError(f"sound_eval failed (err={rc} {SOUND_ERR_MAP.get(rc, '')})")
+        return _parse_eval_from_arena(buf.read())
+
     if not sound_bin.is_file():
         raise FileNotFoundError(f"SOUND CLI binary not found: {sound_bin}")
 
@@ -370,11 +641,29 @@ def verify_arena_bytes(arena_bytes: bytes, sound_bin: Path) -> ArenaEvalResult:
 
 
 def repair_arena_bytes(
-    arena_bytes: bytes, sound_bin: Path, seed: Optional[str] = None
+    arena_bytes: bytes,
+    sound_bin: Path,
+    seed: Optional[str] = None,
+    *,
+    backend: str = "auto",
 ) -> ArenaRepairResult:
-    """Run `build/sound repair` on an in-memory 16,384B arena and parse SEARU repair metrics."""
+    """Run SEARU repair via in-memory `libsound` FFI or `build/sound repair` CLI."""
     if len(arena_bytes) != SOUND_ARENA_BYTES:
         raise ValueError(f"Expected {SOUND_ARENA_BYTES}B SoundArena, got {len(arena_bytes)}B")
+
+    lib = _use_ffi_backend(sound_bin, backend)
+    if lib is not None:
+        buf = _AlignedArenaBuffer(arena_bytes)
+        rc = lib.sound_ring0_arena_verify(buf.ptr)
+        if rc != 0:
+            raise SoundVerifyError(
+                f"SoundArena verify failed (err={rc} {SOUND_ERR_MAP.get(rc, '')})"
+            )
+        rc = lib.sound_ring0_searu_repair(buf.ptr, _parse_seed_u64(seed), 2048)
+        if rc != 0:
+            raise SoundVerifyError(f"SEARU repair failed (err={rc} {SOUND_ERR_MAP.get(rc, '')})")
+        return _parse_repair_from_arena(buf.read())
+
     if not sound_bin.is_file():
         raise FileNotFoundError(f"SOUND CLI binary not found: {sound_bin}")
 
@@ -413,14 +702,65 @@ def lift_fir_arena_bytes(
     prog_name: str = "npc_gate",
     repaired: bool = False,
     seed: Optional[str] = None,
+    backend: str = "auto",
 ) -> ArenaFirResult:
-    """Run `build/sound lift-fir` on a 16,384B arena and return its verified 2,144B FIR1 gate."""
+    """Lift a 16,384B arena to a verified 2,144B FIR1 gate via `libsound` FFI or CLI."""
     if len(arena_bytes) != SOUND_ARENA_BYTES:
         raise ValueError(f"Expected {SOUND_ARENA_BYTES}B SoundArena, got {len(arena_bytes)}B")
-    if not sound_bin.is_file():
-        raise FileNotFoundError(f"SOUND CLI binary not found: {sound_bin}")
     if not prog_name or "/" in prog_name or "\\" in prog_name:
         raise ValueError(f"Invalid FIR program basename: {prog_name!r}")
+
+    lib = _use_ffi_backend(sound_bin, backend)
+    if lib is not None:
+        buf = _AlignedArenaBuffer(arena_bytes)
+        rc = lib.sound_ring0_arena_verify(buf.ptr)
+        if rc != 0:
+            raise SoundVerifyError(
+                f"SoundArena verify failed (err={rc} {SOUND_ERR_MAP.get(rc, '')})"
+            )
+        if repaired:
+            rc = lib.sound_ring0_searu_repair(buf.ptr, _parse_seed_u64(seed), 2048)
+        else:
+            rc = lib.sound_ring0_eval(buf.ptr)
+        if rc != 0:
+            raise SoundVerifyError(f"Kernel eval failed (err={rc} {SOUND_ERR_MAP.get(rc, '')})")
+
+        fir_out = ctypes.create_string_buffer(SOUND_FIR_BYTES)
+        out_len = ctypes.c_size_t(0)
+        eff_name = prog_name.encode("ascii", errors="strict")[:23]
+        fir_flags = SOUND_FIR_FLAG_USE_REPAIRED if repaired else 0
+        rc = lib.sound_ring0_lift_to_fir(
+            buf.ptr,
+            eff_name,
+            fir_flags,
+            ctypes.cast(fir_out, ctypes.c_void_p),
+            SOUND_FIR_BYTES,
+            ctypes.byref(out_len),
+        )
+        if rc != 0:
+            raise SoundVerifyError(
+                f"sound_ring0_lift_to_fir failed (err={rc} {SOUND_ERR_MAP.get(rc, '')})"
+            )
+        fir_bytes = bytes(fir_out[: out_len.value])
+        if len(fir_bytes) != SOUND_FIR_BYTES or not fir_bytes.startswith(b"FIR1"):
+            raise SoundVerifyError("Malformed FFI FIR1 output")
+        cur_bytes = buf.read()
+        if repaired:
+            active_mask = _parse_repair_from_arena(cur_bytes).cand
+        else:
+            active_mask = _parse_eval_from_arena(cur_bytes).established_mask
+        eff_str = eff_name.decode("ascii")
+        return ArenaFirResult(
+            fir_bytes=fir_bytes,
+            prog_name=eff_str,
+            active_mask=active_mask,
+            mult_bits=_SOUND_FIR_MULT_BITS,
+            mult_depth=_SOUND_FIR_MULT_DEPTH,
+            raw_output=f"[ffi lift-fir] name={eff_str} active=0x{active_mask:016x} ({SOUND_FIR_BYTES}B)",
+        )
+
+    if not sound_bin.is_file():
+        raise FileNotFoundError(f"SOUND CLI binary not found: {sound_bin}")
 
     with tempfile.TemporaryDirectory(prefix="sound_fir_") as tmp_dir:
         snd_path = Path(tmp_dir) / f"{prog_name}.snd"
@@ -457,3 +797,74 @@ def lift_fir_arena_bytes(
         mult_depth=int(m.group(5)),
         raw_output=proc.stdout,
     )
+
+
+def apply_declarative_arena_bytes(
+    arena_bytes: bytes,
+    sound_bin: Path,
+    *,
+    intent_node: int,
+    duty_slot: int,
+    in_constitutive_context: bool,
+    internal_will_matches: bool,
+    utterance_hash: int,
+) -> Tuple[bytes, int, NormativeStateSnapshot]:
+    """Execute C17 `sound_ring0_apply_declarative` + re-seal via in-memory `libsound` FFI."""
+    lib = _use_ffi_backend(sound_bin, "ffi")
+    assert lib is not None
+    buf = _AlignedArenaBuffer(arena_bytes)
+    rc_ver = lib.sound_ring0_arena_verify(buf.ptr)
+    if rc_ver != 0:
+        raise SoundVerifyError(
+            f"SoundArena verify failed (err={rc_ver} {SOUND_ERR_MAP.get(rc_ver, '')})"
+        )
+    rc = int(
+        lib.sound_ring0_apply_declarative(
+            buf.ptr,
+            intent_node,
+            duty_slot,
+            bool(in_constitutive_context),
+            bool(internal_will_matches),
+            utterance_hash & 0xFFFFFFFFFFFFFFFF,
+        )
+    )
+    lib.sound_ring0_arena_seal(buf.ptr)
+    sealed = buf.read()
+    return sealed, rc, read_normative_state(sealed)
+
+
+def exercise_rescission_arena_bytes(
+    arena_bytes: bytes,
+    sound_bin: Path,
+    *,
+    target_intent_node: int,
+    duty_slot: int,
+    rescission_hash: int,
+) -> Tuple[bytes, int, ArenaEvalResult, NormativeStateSnapshot]:
+    """Execute C17 `sound_ring0_exercise_rescission` + re-seal via in-memory `libsound` FFI."""
+    lib = _use_ffi_backend(sound_bin, "ffi")
+    assert lib is not None
+    buf = _AlignedArenaBuffer(arena_bytes)
+    rc_ver = lib.sound_ring0_arena_verify(buf.ptr)
+    if rc_ver != 0:
+        raise SoundVerifyError(
+            f"SoundArena verify failed (err={rc_ver} {SOUND_ERR_MAP.get(rc_ver, '')})"
+        )
+    rc = int(
+        lib.sound_ring0_exercise_rescission(
+            buf.ptr,
+            target_intent_node,
+            duty_slot,
+            rescission_hash & 0xFFFFFFFFFFFFFFFF,
+        )
+    )
+    if rc == 0:
+        eval_res = _parse_eval_from_arena(buf.read())
+    else:
+        rc_ev = lib.sound_ring0_eval(buf.ptr)
+        if rc_ev != 0:
+            raise SoundVerifyError(f"sound_eval failed (err={rc_ev})")
+        eval_res = _parse_eval_from_arena(buf.read())
+    lib.sound_ring0_arena_seal(buf.ptr)
+    sealed = buf.read()
+    return sealed, rc, eval_res, read_normative_state(sealed)

@@ -4,22 +4,30 @@ from __future__ import annotations
 
 import hashlib
 import re
+import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from modules.common.arena_codec import (
     FALLBACK_SCHEMA_HASH,
+    SOUND_ARENA_BYTES,
+    SOUND_ERR_MAP,
     ArenaEvalResult,
     ArenaFirResult,
+    apply_declarative_arena_bytes,
     decode_reasons,
+    exercise_rescission_arena_bytes,
+    fnv1a_64,
     lift_fir_arena_bytes,
+    read_normative_state,
     repair_arena_bytes,
     verify_arena_bytes,
 )
 from modules.common.tripwires import scan_option_tripwires
 
 from .lore_engine import build_world_arena, validate_lore_pack
+from .world_ledger import WorldLedger
 
 _COUNTERFACTUAL_RE = re.compile(
     r"(假設|如果|若非|假如|要是|若我|suppose|what\s+if|hypothetically)",
@@ -40,6 +48,7 @@ class NpcSessionState:
     immunity_nodes: Set[str]
     searu_seed: str
     phys_history: List[Dict[str, Any]] = field(default_factory=list)
+    arena_snapshot: Optional[bytes] = None
 
 
 @dataclass(frozen=True)
@@ -101,14 +110,14 @@ class NarrativeWorldRuntime:
         nd = self.nodes_by_id.get(node_id, {})
         return str(nd.get("title", node_id))
 
-    def _eval_npc(
+    def _build_fresh_npc_arena(
         self,
         npc: NpcSessionState,
         *,
         extra_facts: Iterable[str] = (),
-    ) -> Tuple[bytes, ArenaEvalResult, Dict[str, int]]:
+    ) -> Tuple[bytes, Dict[str, int]]:
         facts = set(npc.known_facts) | set(extra_facts)
-        arena_bytes, id_to_idx = build_world_arena(
+        return build_world_arena(
             self.pack,
             facts,
             rumor_facts=npc.rumor_facts - facts,
@@ -116,6 +125,68 @@ class NarrativeWorldRuntime:
             immunity_nodes=npc.immunity_nodes,
             schema_hash=self.schema_hash,
         )
+
+    def _refresh_arena_snapshot_facts(self, npc: NpcSessionState) -> bytes:
+        """Rebuild node fact slots after `known_facts` changes while keeping C17 PhysLog/norm state."""
+        fresh, _ = self._build_fresh_npc_arena(npc)
+        prev = npc.arena_snapshot
+        if prev is None:
+            return fresh
+        buf = bytearray(fresh)
+        # Preserve Cell 1 (SoundNormative64) masks merged with fresh penumbra/power/immunity
+        p_rev, p_pen, p_dp, p_dn, p_pow, p_imm, p_void, p_resc = struct.unpack_from("<8Q", prev, 64)
+        _, f_pen, _, _, f_pow, f_imm, _, _ = struct.unpack_from("<8Q", fresh, 64)
+        struct.pack_into(
+            "<8Q",
+            buf,
+            64,
+            p_rev,
+            p_pen | f_pen,
+            p_dp,
+            p_dn,
+            p_pow | f_pow,
+            p_imm | f_imm,
+            p_void,
+            p_resc,
+        )
+        # Preserve Cells 136..199 (PhysLog entries: 64 x 64B = 4096B at offset 8704)
+        buf[8704 : 8704 + 4096] = prev[8704 : 8704 + 4096]
+        # Preserve Cell 0 phys_len, phys_head, phys_hash and re-seal Merkle root
+        _mag, _ver, _nn, _ff, phys_len, phys_head, _rh, phys_hash, shash, _mr, _rt = struct.unpack_from(
+            "<IIIIIIQQQQQ", prev, 0
+        )
+        merkle = fnv1a_64(bytes(buf[64:SOUND_ARENA_BYTES]))
+        struct.pack_into(
+            "<IIIIIIQQQQQ",
+            buf,
+            0,
+            _mag,
+            _ver,
+            len(self.pack["nodes"]),
+            _ff,
+            phys_len,
+            phys_head,
+            0,
+            phys_hash,
+            shash,
+            merkle,
+            0,
+        )
+        sealed = bytes(buf)
+        npc.arena_snapshot = sealed
+        return sealed
+
+    def _eval_npc(
+        self,
+        npc: NpcSessionState,
+        *,
+        extra_facts: Iterable[str] = (),
+    ) -> Tuple[bytes, ArenaEvalResult, Dict[str, int]]:
+        id_to_idx = {nd["id"]: idx for idx, nd in enumerate(self.pack["nodes"])}
+        if npc.arena_snapshot is not None and not list(extra_facts):
+            arena_bytes = npc.arena_snapshot
+        else:
+            arena_bytes, id_to_idx = self._build_fresh_npc_arena(npc, extra_facts=extra_facts)
         eval_res = verify_arena_bytes(arena_bytes, self.sound_bin)
         return arena_bytes, eval_res, id_to_idx
 
@@ -225,6 +296,8 @@ class NarrativeWorldRuntime:
         newly_learned = [f for f in unlocks if f not in npc.known_facts]
         npc.known_facts.update(unlocks)
         npc.rumor_facts -= npc.known_facts
+        if npc.arena_snapshot is not None:
+            self._refresh_arena_snapshot_facts(npc)
 
         npc.phys_history.append(
             {
@@ -487,6 +560,211 @@ class NarrativeWorldRuntime:
                 f"{npc.role_title}{npc.name}搖頭：「要我動手『{self._node_title(action_node)}』，"
                 f"尚缺必要前提：{missing_names}。」"
             ),
+        )
+
+    def import_ledger(self, ledger: WorldLedger) -> List[str]:
+        """Inject cross-scene `WorldLedger` flags into all NPCs' initial knowledge."""
+        activated = ledger.project_scene_initial_facts(self.pack)
+        if activated:
+            for npc in self.npcs.values():
+                npc.known_facts.update(activated)
+                npc.rumor_facts -= npc.known_facts
+                npc.arena_snapshot = None
+        return activated
+
+    def export_npc_to_ledger(
+        self,
+        npc_id: str,
+        ledger: WorldLedger,
+        export_map: Dict[str, str],
+    ) -> List[str]:
+        """Evaluate an NPC's epistemic arena and record established mapped flags into `WorldLedger`."""
+        npc = self._get_npc(npc_id)
+        _, eval_res, _ = self._eval_npc(npc)
+        granted = [
+            str(ev["action_node"])
+            for ev in npc.phys_history
+            if ev.get("kind") == "grant_action" and "action_node" in ev
+        ]
+        return ledger.record_scene_outcomes(
+            str(self.pack["pack_id"]),
+            eval_res,
+            export_map,
+            granted_actions=granted,
+        )
+
+    def sign_declarative_pact(
+        self,
+        npc_id: str,
+        intent_node: str,
+        duty_slot_node: str,
+        *,
+        in_constitutive_context: bool,
+        internal_will_matches: bool,
+        utterance_hash: int = 0x5041435400000001,
+    ) -> SpeechAct:
+        """Run C17 `sound_ring0_apply_declarative` on an NPC's persistent 16KB SoundArena."""
+        if intent_node not in self.nodes_by_id or duty_slot_node not in self.nodes_by_id:
+            raise KeyError("Unknown intent_node or duty_slot_node")
+        npc = self._get_npc(npc_id)
+        arena_bytes, _, id_to_idx = self._eval_npc(npc)
+        intent_idx = id_to_idx[intent_node]
+        duty_idx = id_to_idx[duty_slot_node]
+
+        sealed, rc, snap = apply_declarative_arena_bytes(
+            arena_bytes,
+            self.sound_bin,
+            intent_node=intent_idx,
+            duty_slot=duty_idx,
+            in_constitutive_context=in_constitutive_context,
+            internal_will_matches=internal_will_matches,
+            utterance_hash=utterance_hash,
+        )
+        npc.arena_snapshot = sealed
+        eval_res = verify_arena_bytes(sealed, self.sound_bin)
+        duty_res = eval_res.nodes[duty_idx]
+        npc.phys_history.append(
+            {
+                "event_id": len(npc.phys_history) + 1,
+                "kind": "declarative_pact",
+                "intent_node": intent_node,
+                "duty_slot_node": duty_slot_node,
+                "rc": rc,
+                "phys_len": snap.phys_len,
+            }
+        )
+
+        duty_title = self._node_title(duty_slot_node)
+        err_name = SOUND_ERR_MAP.get(rc, f"ERR_{rc}")
+        if rc == 7:
+            stance = "PACT_MISSING_CONTEXT"
+            dialogue = (
+                f"{npc.role_title}{npc.name}合上法典：「非正式聽證場合所提宣示不生公法效力（{err_name}），"
+                f"但你的發言已記入編年史雜湊鏈（phys_len={snap.phys_len}）。」"
+            )
+        elif rc == 5:
+            stance = "ACTION_IMMUNITY_LOCKED"
+            dialogue = (
+                f"{npc.role_title}{npc.name}嚴正拒斥：「『{duty_title}』受 KanLock 不可侵犯鎖封存（{err_name}），"
+                f"任何人皆不得締約動搖！」"
+            )
+        elif rc == 6:
+            stance = "ACTION_NO_POWER"
+            dialogue = (
+                f"{npc.role_title}{npc.name}擺手：「我沒有針對『{duty_title}』的宣告權限（{err_name}）。」"
+            )
+        elif rc != 0:
+            stance = "ACTION_PREREQ_MISSING"
+            dialogue = f"{npc.role_title}{npc.name}搖頭：「締約失敗（{err_name}）。」"
+        elif not internal_will_matches:
+            stance = "PACT_SIGNED_VOIDABLE"
+            dialogue = (
+                f"{npc.role_title}{npc.name}皺眉在『{duty_title}』簽章：「既已當庭請願且形式完備，姑且準予效力；"
+                f"惟此處分已被標記為可撤銷（voidable=0x{snap.voidable_mask:x}），若有欺瞞必行追奪！」"
+            )
+        else:
+            stance = "PACT_SIGNED_BINDING"
+            dialogue = (
+                f"{npc.role_title}{npc.name}鄭重用印頒布『{duty_title}』："
+                f"「雙證確鑿、真意無瑕，本令終局生效且不可任意撤銷（voidable=0x{snap.voidable_mask:x}）。」"
+            )
+
+        return SpeechAct(
+            npc_id=npc_id,
+            action_kind="sign_declarative_pact",
+            target_node=duty_slot_node,
+            stance=stance,
+            sound_status=duty_res.status,
+            sound_reasons=duty_res.reasons,
+            allowed_nodes=self._collect_allowed(eval_res),
+            forbidden_spoilers=self._collect_spoilers(npc, eval_res),
+            state_delta={
+                "rc": rc,
+                "err_name": err_name,
+                "phys_len": snap.phys_len,
+                "phys_hash": f"0x{snap.phys_hash:016x}",
+                "duty_pos_mask": snap.duty_pos_mask,
+                "voidable_mask": snap.voidable_mask,
+                "rescission_power_mask": snap.rescission_power_mask,
+            },
+            rendered_dialogue=dialogue,
+        )
+
+    def rescind_deceptive_pact(
+        self,
+        npc_id: str,
+        target_intent_node: str,
+        duty_slot_node: str,
+        *,
+        rescission_hash: int = 0x5245534300000001,
+    ) -> SpeechAct:
+        """Run C17 `sound_ring0_exercise_rescission` to revoke a voidable deceptive pact."""
+        if target_intent_node not in self.nodes_by_id or duty_slot_node not in self.nodes_by_id:
+            raise KeyError("Unknown target_intent_node or duty_slot_node")
+        npc = self._get_npc(npc_id)
+        arena_bytes, _, id_to_idx = self._eval_npc(npc)
+        intent_idx = id_to_idx[target_intent_node]
+        duty_idx = id_to_idx[duty_slot_node]
+
+        sealed, rc, eval_res, snap = exercise_rescission_arena_bytes(
+            arena_bytes,
+            self.sound_bin,
+            target_intent_node=intent_idx,
+            duty_slot=duty_idx,
+            rescission_hash=rescission_hash,
+        )
+        npc.arena_snapshot = sealed
+        intent_res = eval_res.nodes[intent_idx]
+        duty_res = eval_res.nodes[duty_idx]
+        err_name = SOUND_ERR_MAP.get(rc, f"ERR_{rc}")
+
+        npc.phys_history.append(
+            {
+                "event_id": len(npc.phys_history) + 1,
+                "kind": "exercise_rescission",
+                "target_intent_node": target_intent_node,
+                "duty_slot_node": duty_slot_node,
+                "rc": rc,
+                "phys_len": snap.phys_len,
+            }
+        )
+
+        if rc == 0:
+            stance = "PACT_RESCINDED_HOSTILE"
+            dialogue = (
+                f"{npc.role_title}{npc.name}拍案怒喝：「欺君偽造之『{self._node_title(target_intent_node)}』已依法撤銷（REVOKED）！"
+                f"原簽發之『{self._node_title(duty_slot_node)}』即刻失效，衛兵給我拿下！」"
+            )
+        elif rc == 5:
+            stance = "ACTION_IMMUNITY_LOCKED"
+            dialogue = f"{npc.role_title}{npc.name}：「此權限受 KanLock 鎖定，不得撤銷（{err_name}）。」"
+        else:
+            stance = "ACTION_NO_POWER"
+            dialogue = (
+                f"{npc.role_title}{npc.name}冷靜道：「該處分並無可撤銷之瑕疵或撤銷權限（{err_name}）。」"
+            )
+
+        return SpeechAct(
+            npc_id=npc_id,
+            action_kind="rescind_deceptive_pact",
+            target_node=target_intent_node,
+            stance=stance,
+            sound_status=intent_res.status,
+            sound_reasons=intent_res.reasons,
+            allowed_nodes=self._collect_allowed(eval_res),
+            forbidden_spoilers=self._collect_spoilers(npc, eval_res),
+            state_delta={
+                "rc": rc,
+                "err_name": err_name,
+                "phys_len": snap.phys_len,
+                "phys_hash": f"0x{snap.phys_hash:016x}",
+                "revoked_mask": snap.revoked_mask,
+                "duty_pos_mask": snap.duty_pos_mask,
+                "voidable_mask": snap.voidable_mask,
+                "rescission_power_mask": snap.rescission_power_mask,
+                "duty_slot_status": duty_res.status,
+            },
+            rendered_dialogue=dialogue,
         )
 
     def export_npc_fir_gate(

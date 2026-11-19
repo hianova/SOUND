@@ -1,3 +1,3 @@
-"""SOUND-backed narrative engines: offline lore audit, item cards, and NPC runtime."""
+"""SOUND-backed narrative engines: offline lore audit, items, NPC runtime & WorldLedger."""
 
-__all__ = ["lore_engine", "npc_runtime"]
+__all__ = ["lore_engine", "npc_runtime", "world_ledger"]
