@@ -1,15 +1,18 @@
 /-
-  SOUND v2.0.0 — Pure Config, 64B Arena ABI Compiler & JSI Boundary Gate (`import Flow`)
-  ======================================================================================
-  SSOT compliance: all formal machine-word, KanLock, 4-valued alternating-fixpoint
-  bilattice, and 512-bit C17 Schema compilers reside in domain-free `../flow/Flow/*.lean`.
+  SOUND v2.1.0 — Epistemic Kernel Config, 64B Arena ABI Compiler & JSI Boundary Gate
+  ==================================================================================
+  Consumes domain-free `../FLOW/{core,sdk}` (`Flow.Core`, `Flow.Schema`, `Flow.Morphism`)
+  plus local formal bilattice & Hohfeldian theorems in `Sound/Bilattice.lean`.
   This file configures the 256-slot `16,384B` `soundArenaSchema`, declares the
   canonical golden soundness cases, executes elaboration-time Lean<->C17 bit-exact parity
   and SEARU conflict-repair gates (`compileTimeBoundaryGate`), and seals `16,384B`
   `.snd` containers with ZERO local definitions of theorems, lemmas, or axioms.
 -/
 
-import Flow
+import Flow.Core
+import Flow.Schema
+import Flow.Morphism
+import Sound.Bilattice
 
 namespace Sound
 
@@ -210,7 +213,7 @@ structure GoldenCase where
   slots : NormativeSlots
   deriving Repr, DecidableEq, Inhabited
 
-def toBilatticeNode (u : EpistemicNode) : Flow.Bilattice.GraphNode :=
+def toBilatticeNode (u : EpistemicNode) : Sound.Bilattice.GraphNode :=
   { id         := u.id
   , tag        := u.sort.toUInt8
   , rank       := u.source.toUInt8
@@ -247,7 +250,7 @@ private def clauseEntries (supports : List (List Nat)) : List (String × Int) :=
     for cIdx in [:8] do
       let cmask :=
         match supports[cIdx]? with
-        | some cl => Flow.Bilattice.listToMask64 cl
+        | some cl => Sound.Bilattice.listToMask64 cl
         | none    => 0
       out := u64Kv s!"clauses[{cIdx}]" cmask :: out
     return out.reverse
@@ -283,8 +286,8 @@ def buildSealedArenaBytes (nodes : List EpistemicNode) (slots : NormativeSlots) 
       , ("aspect", Int.ofNat u.aspect.toUInt8.toNat)
       , ("num_clauses", Int.ofNat nc)
       , ("flags", Int.ofNat nflags)
-      , u64Kv "presup_mask" (Flow.Bilattice.listToMask64 u.presupDeps)
-      , u64Kv "attack_mask" (Flow.Bilattice.listToMask64 u.attackers)
+      , u64Kv "presup_mask" (Sound.Bilattice.listToMask64 u.presupDeps)
+      , u64Kv "attack_mask" (Sound.Bilattice.listToMask64 u.attackers)
       , ("span_start", Int.ofNat u.spanStart)
       , ("span_end", Int.ofNat u.spanEnd) ] ++ labelEntries u.label
     let metaCell ← soundNodeMetaLayout.packCell metaVals
@@ -442,7 +445,7 @@ def compileTimeBoundaryGate : IO Unit := do
     | some bin =>
         requireGate s!"{gc.name} exact 16,384B VM page" (bin.size == arenaBytes)
         let bNodes := gc.nodes.map toBilatticeNode
-        let (nm, iStar, pStar, est, defM, conf, pen) := Flow.Bilattice.statusMasks leafThreshold bNodes
+        let (nm, iStar, pStar, est, defM, conf, pen) := Sound.Bilattice.statusMasks leafThreshold bNodes
         let parityOk ← verifyArenaBytes bin nm iStar pStar est defM conf pen
         requireGate s!"Lean4<->C17 16KB Arena parity ({gc.name})" parityOk
         let mutMask := gc.slots.powerMask &&& (~~~gc.slots.immunityMask)
