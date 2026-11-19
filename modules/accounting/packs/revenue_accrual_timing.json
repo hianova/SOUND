@@ -1,0 +1,209 @@
+{
+  "pack_id": "revenue_accrual_timing",
+  "domain": "accounting",
+  "jurisdiction": "TW",
+  "standard": "IFRS 15 客戶合約之收入、商業會計法 §10（權責發生制）、存貨交貨條件",
+  "version": "1.0.0",
+  "title": "會計學基礎：權責發生制、收入認列時點（控制權移轉）與 FOB 在途存貨歸屬",
+  "nodes": [
+    {
+      "id": "std_ifrs15_control",
+      "role": "statute_root",
+      "sort": "normative",
+      "evid": "enacted_norm",
+      "description": "IFRS 15：商品或勞務之控制權移轉予客戶時認列收入",
+      "clauses": [[]]
+    },
+    {
+      "id": "std_accrual_basis",
+      "role": "statute_root",
+      "sort": "normative",
+      "evid": "enacted_norm",
+      "description": "商業會計法 §10：採權責發生制，不以現金收付為唯一認列時點",
+      "clauses": [[]]
+    },
+    {
+      "id": "std_ifrs15_unearned",
+      "role": "statute_root",
+      "sort": "normative",
+      "evid": "enacted_norm",
+      "description": "IFRS 15：履約義務尚未滿足前預收客戶對價應認列合約負債（預收收入）",
+      "clauses": [[]]
+    },
+    {
+      "id": "std_fob_ship_rule",
+      "role": "statute_root",
+      "sort": "normative",
+      "evid": "enacted_norm",
+      "description": "FOB 起運點交貨：貨物裝運交付承運人時所有權與風險歸屬買方",
+      "clauses": [[]]
+    },
+    {
+      "id": "std_fob_dest_rule",
+      "role": "statute_root",
+      "sort": "normative",
+      "evid": "enacted_norm",
+      "description": "FOB 目的地交貨：貨物送達指定目的地前所有權與運費歸屬賣方",
+      "clauses": [[]]
+    },
+    {
+      "id": "std_ifrs15_over_time",
+      "role": "statute_root",
+      "sort": "normative",
+      "evid": "enacted_norm",
+      "description": "IFRS 15 §35：符合特定要件之合約應隨時間經過逐步認列收入",
+      "clauses": [[]]
+    },
+    {
+      "id": "fact_contract_signed",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "description": "雙方已簽訂客戶銷售或勞務合約",
+      "aliases": ["簽訂合約", "簽約"]
+    },
+    {
+      "id": "fact_cash_received",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "description": "企業已實際收取客戶現金或預收訂金",
+      "aliases": ["收到現金", "預收訂金", "預收貨款"]
+    },
+    {
+      "id": "fact_control_transferred",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "description": "已履行履約義務並將商品或勞務之控制權移轉予客戶",
+      "aliases": ["控制權移轉", "已交付貨物並完成履約"]
+    },
+    {
+      "id": "fact_goods_in_transit",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "description": "資產負債表日商品正處於運送途中",
+      "aliases": ["在途商品", "運送途中"]
+    },
+    {
+      "id": "fact_fob_shipping",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "description": "交貨條件約定為 FOB 起運點交貨",
+      "aliases": ["起運點交貨", "FOB起運點"]
+    },
+    {
+      "id": "fact_fob_destination",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "description": "交貨條件約定為 FOB 目的地交貨",
+      "aliases": ["目的地交貨", "FOB目的地"]
+    },
+    {
+      "id": "fact_custom_service",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "description": "符合 IFRS 15 §35 隨時間移轉控制權之工程或長期勞務合約",
+      "aliases": ["隨時間逐步提供勞務", "符合隨時間認列條件合約"]
+    },
+    {
+      "id": "fact_credit_sale",
+      "role": "fact_slot",
+      "sort": "factual",
+      "evid": "direct",
+      "description": "賒銷交易，貨款尚未收現",
+      "aliases": ["賒銷", "尚未收到現金"]
+    },
+    {
+      "id": "eff_recognize_rev",
+      "role": "effect",
+      "sort": "normative",
+      "evid": "direct",
+      "description": "應於控制權移轉時認列當期銷貨收入",
+      "presup": ["fact_control_transferred"],
+      "clauses": [
+        ["std_ifrs15_control", "fact_control_transferred"],
+        ["std_accrual_basis", "fact_control_transferred"]
+      ]
+    },
+    {
+      "id": "eff_defer_unearned",
+      "role": "effect",
+      "sort": "normative",
+      "evid": "direct",
+      "description": "僅收現而控制權尚未移轉時，應認列合約負債（預收收入）而非銷貨收入",
+      "presup": ["fact_cash_received"],
+      "attacked_by": ["eff_recognize_rev"],
+      "clauses": [["std_ifrs15_unearned", "fact_cash_received"]]
+    },
+    {
+      "id": "eff_defer_until_cash",
+      "role": "effect",
+      "sort": "normative",
+      "evid": "direct",
+      "description": "錯誤主張未收現前一律不得認列收入（混淆為現金基礎）",
+      "presup": ["fact_credit_sale"],
+      "attacked_by": ["eff_recognize_rev"],
+      "clauses": [["std_ifrs15_unearned", "fact_credit_sale"]]
+    },
+    {
+      "id": "eff_buyer_owns_transit",
+      "role": "effect",
+      "sort": "normative",
+      "evid": "direct",
+      "description": "在途存貨應列入買方存貨且正常運費由買方負擔",
+      "presup": ["fact_fob_shipping", "fact_goods_in_transit"],
+      "attacked_by": ["eff_seller_owns_transit"],
+      "clauses": [["std_fob_ship_rule", "fact_fob_shipping", "fact_goods_in_transit"]]
+    },
+    {
+      "id": "eff_seller_owns_transit",
+      "role": "effect",
+      "sort": "normative",
+      "evid": "direct",
+      "description": "在途存貨應列入賣方存貨且運費由賣方負擔",
+      "presup": ["fact_fob_destination", "fact_goods_in_transit"],
+      "attacked_by": ["eff_buyer_owns_transit"],
+      "clauses": [["std_fob_dest_rule", "fact_fob_destination", "fact_goods_in_transit"]]
+    },
+    {
+      "id": "rule_point_in_time_rev",
+      "role": "rule",
+      "sort": "normative",
+      "evid": "direct",
+      "description": "一般買賣合約於特定時點（控制權移轉時）一次認列收入",
+      "attacked_by": ["exc_over_time_rev"],
+      "clauses": [["std_ifrs15_control", "fact_contract_signed"]]
+    },
+    {
+      "id": "exc_over_time_rev",
+      "role": "rule",
+      "sort": "normative",
+      "evid": "direct",
+      "description": "滿足 IFRS 15 §35 要件之合約應隨時間經過逐步認列收入",
+      "presup": ["fact_custom_service"],
+      "clauses": [["std_ifrs15_over_time", "fact_custom_service"]]
+    },
+    {
+      "id": "pen_over_time_boundary",
+      "role": "penumbra",
+      "sort": "normative",
+      "evid": "direct",
+      "penumbra": true,
+      "description": "高度客製化專案是否無其他用途並具可執行收款權之邊界實質認定半影區",
+      "clauses": [["std_ifrs15_over_time", "fact_contract_signed"]]
+    }
+  ],
+  "universal_counterexamples": {
+    "rule_point_in_time_rev": ["fact_contract_signed", "fact_custom_service"]
+  },
+  "confusable_pairs": [
+    ["eff_recognize_rev", "eff_defer_unearned"],
+    ["eff_recognize_rev", "eff_defer_until_cash"],
+    ["eff_buyer_owns_transit", "eff_seller_owns_transit"]
+  ]
+}

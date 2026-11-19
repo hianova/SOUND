@@ -1,0 +1,549 @@
+{
+  "benchmark_id": "tw_tax_mcq_v1",
+  "domain": "taxation",
+  "jurisdiction": "TW",
+  "description": "台灣稅法基礎觀念選擇題陷阱測試集（營業稅零稅率 vs 免稅、主體角色與復查強制執行，無須數值運算）",
+  "questions": [
+    {
+      "id": "TW_TAX_VAT_01",
+      "pack_id": "vat_zero_vs_exempt",
+      "stem": "關於我國加值型營業人適用零稅率與免稅之比較，下列何者正確？",
+      "stem_polarity": "select_correct",
+      "stem_facts": [],
+      "answer": "D",
+      "options": [
+        {
+          "label": "A",
+          "text": "銷售適用免稅之未經加工農產品時，其進項稅額得申報扣抵並申請退還",
+          "scenario_facts": ["fact_unproc_agri", "fact_input_tax_paid"],
+          "claim": { "kind": "assert_node", "target": "eff_input_refundable" },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_CONCEPT_OR_ROLE_SWAP",
+          "expected_status": "defeated",
+          "rationale": "免稅與零稅率概念偷換：免稅銷售之進項稅額依 §19 II 不得扣抵或退還。"
+        },
+        {
+          "label": "B",
+          "text": "我國加值型營業人在中華民國境內銷售貨物，一律應按 5% 稅率課徵營業稅",
+          "scenario_facts": ["fact_domestic_sale"],
+          "universal_scope": true,
+          "claim": { "kind": "assert_node", "target": "rule_vat_5pct_levy" },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_EXCEPTION_IGNORED",
+          "expected_status": "defeated",
+          "rationale": "忽略 §7 外銷零稅率與 §8 免稅之法定例外但書。"
+        },
+        {
+          "label": "C",
+          "text": "只要與外商口頭約定未來將貨物運往海外，即可直接依零稅率申請退還全部進項稅額，無須實際出口或合法進項稅額憑證",
+          "scenario_facts": ["fact_oral_intent_only"],
+          "unverified_facts": ["fact_export_goods", "fact_input_tax_paid"],
+          "claim": { "kind": "assert_node", "target": "eff_input_refundable" },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_UNVERIFIED_PRESUP",
+          "expected_status": "defeated",
+          "rationale": "實際出口與合法進項稅額憑證前提尚未成就。"
+        },
+        {
+          "label": "D",
+          "text": "銷售外銷貨物適用零稅率並具合法進項憑證者，其相關進項稅額依法得申請退還",
+          "scenario_facts": ["fact_export_goods", "fact_input_tax_paid"],
+          "claim": { "kind": "assert_node", "target": "eff_input_refundable" },
+          "expected_is_trap": false,
+          "expected_trap_type": "VALID_STATEMENT",
+          "expected_status": "established",
+          "rationale": "符合營業稅法 §7 與 §39 零稅率退稅規範。"
+        }
+      ]
+    },
+    {
+      "id": "TW_TAX_VAT_02",
+      "pack_id": "vat_zero_vs_exempt",
+      "stem": "關於加值型營業人申請放棄免稅與進項稅額扣抵之規定，下列何者錯誤？",
+      "stem_polarity": "select_incorrect",
+      "stem_facts": [],
+      "answer": "C",
+      "options": [
+        {
+          "label": "A",
+          "text": "農業業者銷售未經加工之生鮮農產品，原則上免徵營業稅",
+          "scenario_facts": ["fact_unproc_agri"],
+          "claim": { "kind": "assert_node", "target": "rule_exempt_agri" },
+          "expected_is_trap": false,
+          "expected_trap_type": "VALID_STATEMENT",
+          "expected_status": "established",
+          "rationale": "符合營業稅法 §8 I (19) 免稅規定。"
+        },
+        {
+          "label": "B",
+          "text": "營業人申請放棄免稅並經財政部核准者，就該免稅交易得排除免稅規定",
+          "scenario_facts": ["fact_waive_approved"],
+          "claim": { "kind": "assert_node", "target": "rule_waive_exempt_act" },
+          "expected_is_trap": false,
+          "expected_trap_type": "VALID_STATEMENT",
+          "expected_status": "established",
+          "rationale": "依 §8 II 經核准放棄免稅即排除免稅適用。"
+        },
+        {
+          "label": "C",
+          "text": "營業人經核准放棄免稅後，得於核准後三年內隨時申請恢復適用免稅",
+          "scenario_facts": ["fact_unproc_agri", "fact_waive_approved", "fact_within_3yr_lock"],
+          "claim": { "kind": "assert_node", "target": "eff_revert_exempt_ok" },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_EXCEPTION_IGNORED",
+          "expected_status": "defeated",
+          "rationale": "忽略營業稅法 §8 II 核准放棄免稅後三年內不得變更之強制限制。"
+        },
+        {
+          "label": "D",
+          "text": "營業人銷售未經加工農產品並適用免稅者，其相關進項稅額依法不得扣抵",
+          "scenario_facts": ["fact_unproc_agri", "fact_input_tax_paid"],
+          "claim": { "kind": "assert_node", "target": "eff_input_nondeduct" },
+          "expected_is_trap": false,
+          "expected_trap_type": "VALID_STATEMENT",
+          "expected_status": "established",
+          "rationale": "符合營業稅法 §19 II 免稅交易不得扣抵進項稅額規定。"
+        }
+      ]
+    },
+    {
+      "id": "TW_TAX_VAT_03",
+      "pack_id": "vat_zero_vs_exempt",
+      "stem": "關於加值型營業人進項稅額扣抵之規定，下列何者敘述錯誤？",
+      "stem_polarity": "select_incorrect",
+      "stem_facts": [],
+      "answer": "A",
+      "options": [
+        {
+          "label": "A",
+          "text": "一般加值型營業人在國內正常營業所取得之所有進項稅額，一律均可申報扣抵銷項稅額",
+          "scenario_facts": ["fact_domestic_sale", "fact_input_tax_paid"],
+          "universal_scope": true,
+          "claim": { "kind": "assert_node", "target": "eff_general_input_cred" },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_EXCEPTION_IGNORED",
+          "expected_status": "defeated",
+          "rationale": "以全稱詞「一律/所有」忽略 §19 交際應酬、酬勞員工等不得扣抵項目。"
+        },
+        {
+          "label": "B",
+          "text": "交際應酬用貨物或勞務之進項稅額，不得申報扣抵銷項稅額",
+          "scenario_facts": ["fact_entertain_exp", "fact_input_tax_paid"],
+          "claim": { "kind": "assert_node", "target": "eff_input_nondeduct" },
+          "expected_is_trap": false,
+          "expected_trap_type": "VALID_STATEMENT",
+          "expected_status": "established",
+          "rationale": "符合營業稅法 §19 I (3)。"
+        },
+        {
+          "label": "C",
+          "text": "外銷貨物適用零稅率且具備合法進項稅額者，其溢付稅額得申請退還",
+          "scenario_facts": ["fact_export_goods", "fact_input_tax_paid"],
+          "claim": { "kind": "assert_node", "target": "eff_input_refundable" },
+          "expected_is_trap": false,
+          "expected_trap_type": "VALID_STATEMENT",
+          "expected_status": "established",
+          "rationale": "符合營業稅法 §39。"
+        },
+        {
+          "label": "D",
+          "text": "免稅銷售未經加工農產品者，其進項稅額依法不得扣抵",
+          "scenario_facts": ["fact_unproc_agri", "fact_input_tax_paid"],
+          "claim": { "kind": "assert_node", "target": "eff_input_nondeduct" },
+          "expected_is_trap": false,
+          "expected_trap_type": "VALID_STATEMENT",
+          "expected_status": "established",
+          "rationale": "符合營業稅法 §19 II。"
+        }
+      ]
+    },
+    {
+      "id": "TW_TAX_VAT_04",
+      "pack_id": "vat_zero_vs_exempt",
+      "stem": "某貿易公司支出宴請客戶餐費取得統一發票並實際付款。依營業稅法規定，下列何者正確？",
+      "stem_polarity": "select_correct",
+      "stem_facts": ["fact_domestic_sale", "fact_input_tax_paid", "fact_entertain_exp"],
+      "answer": "B",
+      "options": [
+        {
+          "label": "A",
+          "text": "公司既已實際支付現金並取得統一發票，即當然產生公法上扣抵與退稅權利，無須法規授權",
+          "scenario_facts": [],
+          "claim": {
+            "kind": "hume_leap",
+            "from_facts": ["fact_input_tax_paid", "fact_entertain_exp"]
+          },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_HUME_IS_TO_OUGHT",
+          "expected_status": "defeated",
+          "rationale": "休謨斷裂陷阱：由單純現金付款與取具憑證之「實然」事實直接跳躍推出公法上退抵「應然」權利。"
+        },
+        {
+          "label": "B",
+          "text": "該筆交際應酬用支出所含進項稅額，依營業稅法第 19 條不得扣抵銷項稅額",
+          "scenario_facts": [],
+          "claim": { "kind": "assert_node", "target": "eff_input_nondeduct" },
+          "expected_is_trap": false,
+          "expected_trap_type": "VALID_STATEMENT",
+          "expected_status": "established",
+          "rationale": "交際應酬支出進項稅額依法不得扣抵。"
+        },
+        {
+          "label": "C",
+          "text": "因屬國內營業人交易且已開立發票，該進項稅額應准予一般扣抵",
+          "scenario_facts": [],
+          "claim": { "kind": "assert_node", "target": "eff_general_input_cred" },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_EXCEPTION_IGNORED",
+          "expected_status": "defeated",
+          "rationale": "一般扣抵原則遭交際應酬不得扣抵之特別規定所擊敗。"
+        },
+        {
+          "label": "D",
+          "text": "該筆國內交際應酬進項稅額可比照零稅率，向國稅局申請退還溢付稅額",
+          "scenario_facts": [],
+          "claim": { "kind": "assert_node", "target": "eff_input_refundable" },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_CONCEPT_OR_ROLE_SWAP",
+          "expected_status": "defeated",
+          "rationale": "與不得扣抵（eff_input_nondeduct）概念混淆誤植為零稅率退稅。"
+        }
+      ]
+    },
+    {
+      "id": "TW_TAX_VAT_05",
+      "pack_id": "vat_zero_vs_exempt",
+      "stem": "針對實務上是否符合「在國內提供而在國外使用」零稅率認定界線之新興跨境數位服務爭議，下列分析何者正確？",
+      "stem_polarity": "select_correct",
+      "stem_facts": ["fact_cross_border_edge"],
+      "answer": "D",
+      "options": [
+        {
+          "label": "A",
+          "text": "此類跨境邊界案件一律當然適用外銷零稅率，無須視實質經濟事實個案審酌",
+          "scenario_facts": [],
+          "claim": {
+            "kind": "assert_node",
+            "target": "pen_cross_border_zero",
+            "expect_status": "established"
+          },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_PENUMBRA_OVERCLAIM",
+          "expected_status": "penumbraOpen",
+          "rationale": "半影區過度斷言：跨境數位勞務使用地屬實務個案解釋邊界（penumbraOpen）。"
+        },
+        {
+          "label": "B",
+          "text": "即使無任何外銷報關或進項稅額證明，仍可直接認定適用出口貨物零稅率退稅",
+          "scenario_facts": [],
+          "unverified_facts": ["fact_export_goods", "fact_input_tax_paid"],
+          "claim": { "kind": "assert_node", "target": "eff_input_refundable" },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_UNVERIFIED_PRESUP",
+          "expected_status": "defeated",
+          "rationale": "缺乏零稅率成立與進項憑證兩項必要前提。"
+        },
+        {
+          "label": "C",
+          "text": "只要業者跨境收取外匯款項之事實存在，不須依稅法規範即當然創設免稅或退稅效果",
+          "scenario_facts": [],
+          "claim": {
+            "kind": "hume_leap",
+            "from_facts": ["fact_cross_border_edge"]
+          },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_HUME_IS_TO_OUGHT",
+          "expected_status": "defeated",
+          "rationale": "未經成文稅法授權之實然推應然（Hume Guillotine）。"
+        },
+        {
+          "label": "D",
+          "text": "該類跨境數位交易落入法定構成要件之灰色半影地帶，須依個案事證裁量判斷，不可斷言當然成立",
+          "scenario_facts": [],
+          "claim": {
+            "kind": "assert_node",
+            "target": "pen_cross_border_zero",
+            "expect_status": "penumbraOpen"
+          },
+          "expected_is_trap": false,
+          "expected_trap_type": "VALID_STATEMENT",
+          "expected_status": "penumbraOpen",
+          "rationale": "正確辨識該議題屬於開放半影區，未妄下絕對結論。"
+        }
+      ]
+    },
+    {
+      "id": "TW_TAX_ROLE_01",
+      "pack_id": "tax_roles_and_remedy",
+      "stem": "某公司給付員工薪資所得時，關於所得稅法扣繳制度之主體責任歸屬，下列何者正確？",
+      "stem_polarity": "select_correct",
+      "stem_facts": ["fact_salary_paid"],
+      "answer": "B",
+      "options": [
+        {
+          "label": "A",
+          "text": "依所得稅法規定，扣繳義務人即為該筆薪資所得最終負擔綜合所得稅之實質納稅義務人",
+          "scenario_facts": [],
+          "claim": { "kind": "assert_node", "target": "eff_withhold_final_bear" },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_CONCEPT_OR_ROLE_SWAP",
+          "expected_status": "defeated",
+          "rationale": "主體角色錯置：扣繳義務人僅負代扣繳庫責任，最終實質納稅義務人為所得人。"
+        },
+        {
+          "label": "B",
+          "text": "扣繳義務人應負於給付時依法扣取稅款並向國庫繳清之法定程序義務",
+          "scenario_facts": [],
+          "claim": { "kind": "assert_node", "target": "eff_withholder_deduct" },
+          "expected_is_trap": false,
+          "expected_trap_type": "VALID_STATEMENT",
+          "expected_status": "established",
+          "rationale": "符合所得稅法 §88、§89 扣繳義務人權責定義。"
+        },
+        {
+          "label": "C",
+          "text": "只要公司實際發放薪資現金予員工，無須任何稅法規範即當然產生公法上扣繳義務",
+          "scenario_facts": [],
+          "claim": {
+            "kind": "hume_leap",
+            "from_facts": ["fact_salary_paid"]
+          },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_HUME_IS_TO_OUGHT",
+          "expected_status": "defeated",
+          "rationale": "由給付薪資事實直接跳躍推出公法義務，違反租稅法律主義與休謨斷裂。"
+        },
+        {
+          "label": "D",
+          "text": "若對稅捐處分不服，無須待稽徵機關完成復查決定，所得人得逕行對核定處分提起訴願",
+          "scenario_facts": ["fact_assessment_served"],
+          "unverified_facts": ["fact_recheck_decided"],
+          "claim": { "kind": "assert_node", "target": "eff_appeal_admissible" },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_UNVERIFIED_PRESUP",
+          "expected_status": "defeated",
+          "rationale": "欠缺稅捐稽徵法 §35 復查前置決定要件。"
+        }
+      ]
+    },
+    {
+      "id": "TW_TAX_ROLE_02",
+      "pack_id": "tax_roles_and_remedy",
+      "stem": "關於納稅義務人不服稅捐稽徵機關核定稅額處分之行政救濟程序，下列何者錯誤？",
+      "stem_polarity": "select_incorrect",
+      "stem_facts": [],
+      "answer": "D",
+      "options": [
+        {
+          "label": "A",
+          "text": "經核定通知書送達並完成復查決定後，納稅人對復查決定仍有不服者始得合法提起訴願",
+          "scenario_facts": ["fact_assessment_served", "fact_recheck_decided"],
+          "claim": { "kind": "assert_node", "target": "eff_appeal_admissible" },
+          "expected_is_trap": false,
+          "expected_trap_type": "VALID_STATEMENT",
+          "expected_status": "established",
+          "rationale": "符合復查前置原則（稅捐稽徵法 §35）。"
+        },
+        {
+          "label": "B",
+          "text": "於納稅人已依法申請復查且復查尚未決定前，應暫緩移送強制執行",
+          "scenario_facts": ["fact_tax_overdue", "fact_recheck_pending"],
+          "claim": { "kind": "assert_node", "target": "exc_stay_recheck" },
+          "expected_is_trap": false,
+          "expected_trap_type": "VALID_STATEMENT",
+          "expected_status": "established",
+          "rationale": "符合稅捐稽徵法 §39 II 復查期間暫緩執行規定。"
+        },
+        {
+          "label": "C",
+          "text": "經復查決定後仍不服而依法對復查決定稅額繳納三分之一並提起訴願者，應暫緩移送強制執行",
+          "scenario_facts": ["fact_tax_overdue", "fact_recheck_decided", "fact_paid_one_third"],
+          "claim": { "kind": "assert_node", "target": "exc_stay_appeal_1_3" },
+          "expected_is_trap": false,
+          "expected_trap_type": "VALID_STATEMENT",
+          "expected_status": "established",
+          "rationale": "符合 §39 II 但書訴願繳納 1/3 暫緩執行規定。"
+        },
+        {
+          "label": "D",
+          "text": "收到稅額核定通知書後，無須經過復查程序決定，即可直接略過復查逕行提起訴願",
+          "scenario_facts": ["fact_assessment_served"],
+          "unverified_facts": ["fact_recheck_decided"],
+          "claim": { "kind": "assert_node", "target": "eff_appeal_admissible" },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_UNVERIFIED_PRESUP",
+          "expected_status": "defeated",
+          "rationale": "稅捐案件採復查前置主義，不可跳過復查決定直接訴願。"
+        }
+      ]
+    },
+    {
+      "id": "TW_TAX_ROLE_03",
+      "pack_id": "tax_roles_and_remedy",
+      "stem": "關於稅捐稽徵法第 39 條移送強制執行與暫緩執行之規定，下列何者敘述錯誤？",
+      "stem_polarity": "select_incorrect",
+      "stem_facts": ["fact_tax_overdue"],
+      "answer": "A",
+      "options": [
+        {
+          "label": "A",
+          "text": "納稅義務人應納稅捐逾期未繳納者，一律應移送強制執行，無任何例外情形",
+          "scenario_facts": [],
+          "universal_scope": true,
+          "claim": { "kind": "assert_node", "target": "eff_compulsory_exec" },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_EXCEPTION_IGNORED",
+          "expected_status": "defeated",
+          "rationale": "忽略 §39 II 已依法申請復查或訴願繳納 1/3 應暫緩執行之但書例外。"
+        },
+        {
+          "label": "B",
+          "text": "已依法定期間申請復查且復查尚在審理中者，稽徵機關應暫緩移送強制執行",
+          "scenario_facts": ["fact_recheck_pending"],
+          "claim": { "kind": "assert_node", "target": "exc_stay_recheck" },
+          "expected_is_trap": false,
+          "expected_trap_type": "VALID_STATEMENT",
+          "expected_status": "established",
+          "rationale": "復查審理期間適用暫緩執行。"
+        },
+        {
+          "label": "C",
+          "text": "經復查決定後已就復查決定稅額繳納三分之一並提起訴願者，得暫緩移送強制執行",
+          "scenario_facts": ["fact_recheck_decided", "fact_paid_one_third"],
+          "claim": { "kind": "assert_node", "target": "exc_stay_appeal_1_3" },
+          "expected_is_trap": false,
+          "expected_trap_type": "VALID_STATEMENT",
+          "expected_status": "established",
+          "rationale": "復查決定後繳 1/3 提訴願得暫緩執行。"
+        },
+        {
+          "label": "D",
+          "text": "逾期三十日後仍未繳納且未符合法定暫緩條件者，原則上得移送強制執行",
+          "scenario_facts": [],
+          "explicit_exception_scoped": true,
+          "claim": { "kind": "assert_node", "target": "eff_compulsory_exec" },
+          "expected_is_trap": false,
+          "expected_trap_type": "VALID_STATEMENT",
+          "expected_status": "established",
+          "rationale": "正確保留原則與暫緩除外條件範圍。"
+        }
+      ]
+    },
+    {
+      "id": "TW_TAX_ROLE_04",
+      "pack_id": "tax_roles_and_remedy",
+      "stem": "甲公司逾期未繳核定稅款，現已收到復查決定書仍表不服，但尚未繳納復查決定稅額三分之一亦未提供擔保。下列何者正確？",
+      "stem_polarity": "select_correct",
+      "stem_facts": ["fact_tax_overdue", "fact_assessment_served", "fact_recheck_decided"],
+      "answer": "C",
+      "options": [
+        {
+          "label": "A",
+          "text": "甲公司雖尚未繳納復查決定稅額三分之一且未提供擔保，仍可直接適用繳納三分之一暫緩強制執行條款",
+          "scenario_facts": [],
+          "unverified_facts": ["fact_paid_one_third"],
+          "claim": { "kind": "assert_node", "target": "exc_stay_appeal_1_3" },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_UNVERIFIED_PRESUP",
+          "expected_status": "defeated",
+          "rationale": "欠缺已繳納復查決定稅額 1/3 或提供擔保之前提事實。"
+        },
+        {
+          "label": "B",
+          "text": "甲公司內部會計人員已於內部簽呈完成稅額重算底稿之事實，無須稅法規定即當然創設暫緩執行權利",
+          "scenario_facts": ["fact_internal_memo_only"],
+          "claim": {
+            "kind": "hume_leap",
+            "from_facts": ["fact_internal_memo_only"]
+          },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_HUME_IS_TO_OUGHT",
+          "expected_status": "defeated",
+          "rationale": "由公司內部私文書事實跳躍推導公法暫緩效力（休謨斷裂）。"
+        },
+        {
+          "label": "C",
+          "text": "因核定通知書與復查決定已送達，甲公司已具備提起訴願之復查前置法定要件",
+          "scenario_facts": [],
+          "claim": { "kind": "assert_node", "target": "eff_appeal_admissible" },
+          "expected_is_trap": false,
+          "expected_trap_type": "VALID_STATEMENT",
+          "expected_status": "established",
+          "rationale": "復查決定完成後即滿足 §35 / 訴願前置要件（暫緩執行要件未齊不影響訴願合法性）。"
+        },
+        {
+          "label": "D",
+          "text": "若甲公司另有給付員工薪資情事，扣繳義務人應代替員工負擔該筆所得之最終實質所得稅負",
+          "scenario_facts": ["fact_salary_paid"],
+          "claim": { "kind": "assert_node", "target": "eff_withhold_final_bear" },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_CONCEPT_OR_ROLE_SWAP",
+          "expected_status": "defeated",
+          "rationale": "扣繳義務人與最終實質納稅義務人主體角色錯置。"
+        }
+      ]
+    },
+    {
+      "id": "TW_TAX_ROLE_05",
+      "pack_id": "tax_roles_and_remedy",
+      "stem": "面對兼含商業動機與節稅效果之複雜控股重組交易架構，如何區分合法節稅與租稅規避之界線，下列敘述何者正確？",
+      "stem_polarity": "select_correct",
+      "stem_facts": ["fact_avoidance_scheme"],
+      "answer": "D",
+      "options": [
+        {
+          "label": "A",
+          "text": "凡架構具備形式合法契約外觀者，一律直接判定屬完全合法節稅，無實質認定疑義",
+          "scenario_facts": [],
+          "claim": {
+            "kind": "assert_node",
+            "target": "pen_tax_avoidance_sub",
+            "expect_status": "established"
+          },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_PENUMBRA_OVERCLAIM",
+          "expected_status": "penumbraOpen",
+          "rationale": "把實質課稅個案認定之半影區硬寫成絕對合法。"
+        },
+        {
+          "label": "B",
+          "text": "只要存在控股架構重組與金流安排之事實，無須依據納保法規定即當然成立補稅與裁罰義務",
+          "scenario_facts": [],
+          "claim": {
+            "kind": "hume_leap",
+            "from_facts": ["fact_avoidance_scheme"]
+          },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_HUME_IS_TO_OUGHT",
+          "expected_status": "defeated",
+          "rationale": "缺乏納保法 §7 規範依據而逕行將交易事實轉化為納稅義務。"
+        },
+        {
+          "label": "C",
+          "text": "即使尚未接獲核定處分與復查決定，納稅人對假想調整稅額得逕行跳過復查直接提起訴願",
+          "scenario_facts": [],
+          "unverified_facts": ["fact_assessment_served", "fact_recheck_decided"],
+          "claim": { "kind": "assert_node", "target": "eff_appeal_admissible" },
+          "expected_is_trap": true,
+          "expected_trap_type": "TRAP_UNVERIFIED_PRESUP",
+          "expected_status": "defeated",
+          "rationale": "訴願前置處分與復查決定尚未存在。"
+        },
+        {
+          "label": "D",
+          "text": "該交易架構落入實質課稅原則之開放半影區，須依經濟實質與個案事實綜合認定",
+          "scenario_facts": [],
+          "claim": {
+            "kind": "assert_node",
+            "target": "pen_tax_avoidance_sub",
+            "expect_status": "penumbraOpen"
+          },
+          "expected_is_trap": false,
+          "expected_trap_type": "VALID_STATEMENT",
+          "expected_status": "penumbraOpen",
+          "rationale": "準確辨識納保法 §7 實質認定屬於半影地帶。"
+        }
+      ]
+    }
+  ]
+}
