@@ -51,7 +51,7 @@ JSI_CFLAGS := -std=c17 -Wall -Wextra -Wpedantic -Wundef -Wmissing-prototypes -We
               -I. -I$(BUILD_DIR) -isystem "$(FLOW_CORE_INC)" -isystem "$(FLOW_SDK_INC)" -isystem "$(LEAN_SYSROOT)/include"
 
 .DEFAULT_GOAL := all
-.PHONY: all upstream-deps lean ring0 jsi test verify fmt fmt-check clean
+.PHONY: all upstream-deps lean ring0 jsi test verify sabotage-check fmt fmt-check clean
 
 all: lean ring0 $(BUILD_DIR)/libsound.a $(LIBSOUND_DYN) $(BUILD_DIR)/sound jsi
 
@@ -176,6 +176,10 @@ test: all
 
 verify: test fmt-check
 	@echo "=== ALL SOUND v$(SOUND_VER) GATES PASSED ==="
+
+sabotage-check: all
+	@echo "=== [Gate 6] Single-Fault C17 Sabotage Mutation Gate ==="
+	python3 tools/sound_sabotage_check.py
 
 clean:
 	rm -rf $(BUILD_DIR)

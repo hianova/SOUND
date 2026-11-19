@@ -220,7 +220,7 @@ class SoundNarrativeTest(unittest.TestCase):
         rt = NarrativeWorldRuntime(scene2, SOUND_BIN, self.schema_hash)
         rt.present_item("npc_magistrate", "item_forged_petition")
 
-        # 1. Out-of-court attempt -> SOUND_ERR_MISSING_CONTEXT (7), phys_len increments to 1
+        # 1. Out-of-court attempt -> SOUND_FIBER_HOLD_MISSING_CONTEXT (7), phys_len increments to 1
         act_ctx = rt.sign_declarative_pact(
             "npc_magistrate",
             "intent_forged_oath",
@@ -232,7 +232,7 @@ class SoundNarrativeTest(unittest.TestCase):
         self.assertEqual(act_ctx.state_delta["rc"], 7)
         self.assertEqual(act_ctx.state_delta["phys_len"], 1)
 
-        # 2. Attempt on KanLock-protected crown seal -> SOUND_ERR_IMMUNITY_LOCKED (5)
+        # 2. Attempt on KanLock-protected crown seal -> SOUND_FIBER_HOLD_IMMUNITY (5)
         act_imm = rt.sign_declarative_pact(
             "npc_magistrate",
             "intent_forged_oath",
@@ -243,7 +243,7 @@ class SoundNarrativeTest(unittest.TestCase):
         self.assertEqual(act_imm.stance, "ACTION_IMMUNITY_LOCKED")
         self.assertEqual(act_imm.state_delta["rc"], 5)
 
-        # 3. Deceptive signing in court -> SOUND_OK, duty_pos & voidable & rescission_power set
+        # 3. Deceptive signing in court -> SOUND_FIBER_COMMITTED, duty_pos & voidable & rescission_power set
         act_void = rt.sign_declarative_pact(
             "npc_magistrate",
             "intent_forged_oath",

@@ -17,11 +17,13 @@ from modules.common.arena_codec import (
     SOUND_FLOW_AUX_OFFSET,
     SOUND_MAX_NODES,
     ArenaNodeSpec,
+    SoundFiber,
     SoundVerifyError,
     decode_reasons,
     encode_arena,
     load_schema_hash,
     read_flow_aux_words,
+    try_verify_arena_bytes,
     verify_arena_bytes,
 )
 from modules.common.compute_bridge import (
@@ -277,12 +279,15 @@ class ComputeBridgeTestSuite(unittest.TestCase):
         self.assertEqual(decoded["entries"][0]["scaled_i64"], 1200000)
         self.assertEqual(decoded["entries"][1]["scaled_i64"], 1250)  # round(0.125 * 10^4) == 1250
 
-        # Flipping 1 bit inside flow_aux must break SoundArena Merkle integrity (SOUND_ERR_MAC)
+        # Flipping 1 bit inside flow_aux must yield SOUND_FIBER_FALLBACK_MAC (both value-first & strict)
         tampered = bytearray(bridged.arena_bytes)
         tampered[SOUND_FLOW_AUX_OFFSET + 8] ^= 0x01
+        outcome = try_verify_arena_bytes(bytes(tampered), SOUND_BIN, backend="ffi")
+        self.assertFalse(outcome.committed)
+        self.assertEqual(outcome.fiber, SoundFiber.FALLBACK_MAC)
         with self.assertRaises(SoundVerifyError) as ctx:
             verify_arena_bytes(bytes(tampered), SOUND_BIN, backend="ffi")
-        self.assertIn("SOUND_ERR_MAC", str(ctx.exception))
+        self.assertIn("SOUND_FIBER_FALLBACK_MAC", str(ctx.exception))
 
     def test_07_fir1_lowering_and_c17_flow_ir_parity(self) -> None:
         spec = {

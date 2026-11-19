@@ -500,4 +500,346 @@ theorem bit_partition_four_way_bv64 (nodeMask iStar pStar guardMask : BitVec 64)
     (e ||| c ||| d ||| g) = nodeMask := by
   bv_decide
 
+/-! ## Prepared-Statement Policy/Input Isolation (`bv_decide`) -/
+
+/-- Pure bit-vector admission predicate modeling Zero-Trust Prepared-Statement
+    policy/data plane separation:
+    - `policyMask` and `bindMask` must be strictly disjoint;
+    - `targetMask` must be non-zero, non-immutable, outside `policyMask`,
+      and strictly contained in `bindMask`;
+    - neither the target slot nor candidate may carry non-factual sort,
+      privilege escalation flags / enacted-norm authority, or topology edges. -/
+def preparedPolicyAdmitBV64
+    (policyMask bindMask immMask targetMask candTopoMask : BitVec 64)
+    (targetNonFactual candNonFactual candPrivOrEnacted : Bool) : Bool :=
+  ((policyMask &&& bindMask) == 0#64) &&
+  (targetMask != 0#64) &&
+  ((targetMask &&& immMask) == 0#64) &&
+  ((targetMask &&& policyMask) == 0#64) &&
+  ((targetMask &&& ~~~bindMask) == 0#64) &&
+  (!targetNonFactual) &&
+  (!candNonFactual) &&
+  (!candPrivOrEnacted) &&
+  (candTopoMask == 0#64)
+
+/-- 31. Admitted prepared-statement candidates guarantee strict disjointness of
+    policy and bind masks, with `targetMask` inside `bindMask` and outside `policyMask`. -/
+theorem prepared_policy_disjoint_mask_bv64
+    (policyMask bindMask immMask targetMask candTopoMask : BitVec 64)
+    (targetNonFactual candNonFactual candPrivOrEnacted : Bool)
+    (hAdmit : preparedPolicyAdmitBV64 policyMask bindMask immMask targetMask candTopoMask
+        targetNonFactual candNonFactual candPrivOrEnacted = true) :
+    (policyMask &&& bindMask) = 0#64 ∧
+    (targetMask &&& bindMask) = targetMask ∧
+    (targetMask &&& policyMask) = 0#64 := by
+  unfold preparedPolicyAdmitBV64 at hAdmit
+  bv_decide
+
+/-- 32. Any target overlap with an immutable slot (`immMask`) is unconditionally blocked. -/
+theorem prepared_blocks_immunity_bv64
+    (policyMask bindMask immMask targetMask candTopoMask : BitVec 64)
+    (targetNonFactual candNonFactual candPrivOrEnacted : Bool)
+    (hImm : (targetMask &&& immMask) ≠ 0#64) :
+    preparedPolicyAdmitBV64 policyMask bindMask immMask targetMask candTopoMask
+        targetNonFactual candNonFactual candPrivOrEnacted = false := by
+  unfold preparedPolicyAdmitBV64
+  bv_decide
+
+/-- 33. Any attempt to write into a sealed policy slot (`policyMask`) is unconditionally blocked. -/
+theorem prepared_blocks_policy_slot_bv64
+    (policyMask bindMask immMask targetMask candTopoMask : BitVec 64)
+    (targetNonFactual candNonFactual candPrivOrEnacted : Bool)
+    (hPol : (targetMask &&& policyMask) ≠ 0#64) :
+    preparedPolicyAdmitBV64 policyMask bindMask immMask targetMask candTopoMask
+        targetNonFactual candNonFactual candPrivOrEnacted = false := by
+  unfold preparedPolicyAdmitBV64
+  bv_decide
+
+/-- 34. Any write to an unbound or zero target slot outside `bindMask` is blocked. -/
+theorem prepared_blocks_unbound_slot_bv64
+    (policyMask bindMask immMask targetMask candTopoMask : BitVec 64)
+    (targetNonFactual candNonFactual candPrivOrEnacted : Bool)
+    (hUnbound : targetMask = 0#64 ∨ (targetMask &&& ~~~bindMask) ≠ 0#64) :
+    preparedPolicyAdmitBV64 policyMask bindMask immMask targetMask candTopoMask
+        targetNonFactual candNonFactual candPrivOrEnacted = false := by
+  unfold preparedPolicyAdmitBV64
+  bv_decide
+
+/-- 35. Cross-plane sort mutations (`targetNonFactual` / `candNonFactual`) and
+    privilege / enacted-norm escalation (`candPrivOrEnacted`) are unconditionally blocked. -/
+theorem prepared_blocks_cross_plane_or_priv_esc
+    (policyMask bindMask immMask targetMask candTopoMask : BitVec 64)
+    (targetNonFactual candNonFactual candPrivOrEnacted : Bool)
+    (hEsc : targetNonFactual = true ∨ candNonFactual = true ∨ candPrivOrEnacted = true) :
+    preparedPolicyAdmitBV64 policyMask bindMask immMask targetMask candTopoMask
+        targetNonFactual candNonFactual candPrivOrEnacted = false := by
+  unfold preparedPolicyAdmitBV64
+  bv_decide
+
+/-- 36. Any non-zero structural/topology edge injection (`presup ||| premise ||| attack`) is blocked. -/
+theorem prepared_blocks_topology_injection_bv64
+    (policyMask bindMask immMask targetMask candPresup candPremise candAttack : BitVec 64)
+    (targetNonFactual candNonFactual candPrivOrEnacted : Bool)
+    (hTopo : (candPresup ||| candPremise ||| candAttack) ≠ 0#64) :
+    preparedPolicyAdmitBV64 policyMask bindMask immMask targetMask
+        (candPresup ||| candPremise ||| candAttack)
+        targetNonFactual candNonFactual candPrivOrEnacted = false := by
+  unfold preparedPolicyAdmitBV64
+  bv_decide
+
+/-! ## HoTT Fallback Fiber & Branchless KanLock Retractions -/
+
+/-- Canonical 14-branch HoTT fallback fiber replacing split imperative error/verdict codes.
+    Every kernel transition is a total morphism `SoundArena → SoundArena` tagged with
+    its landing fiber (`0 = committed`, `1..13 = hold/fallback fibers`). -/
+inductive SoundFiber where
+  | committed
+  | fallbackNull
+  | fallbackBounds
+  | fallbackFormat
+  | fallbackMac
+  | holdImmunity
+  | holdNoPower
+  | holdMissingContext
+  | holdIncoherent
+  | fallbackPolicyTamper
+  | fallbackClarify
+  | fallbackIrrealis
+  | fallbackSpan
+  | fallbackPolicyViolation
+  deriving Repr, DecidableEq, Inhabited
+
+/-- ABI wire encoding of `SoundFiber` matching C17 `sound_fiber_t` (`0..13`). -/
+def SoundFiber.code : SoundFiber → UInt32
+  | .committed               => 0
+  | .fallbackNull            => 1
+  | .fallbackBounds          => 2
+  | .fallbackFormat          => 3
+  | .fallbackMac             => 4
+  | .holdImmunity            => 5
+  | .holdNoPower             => 6
+  | .holdMissingContext      => 7
+  | .holdIncoherent          => 8
+  | .fallbackPolicyTamper    => 9
+  | .fallbackClarify         => 10
+  | .fallbackIrrealis        => 11
+  | .fallbackSpan            => 12
+  | .fallbackPolicyViolation => 13
+
+/-- Branchless 64-bit Hohfeldian potestative transition producing both the new
+    `(duty_pos, duty_neg)` state and its exact HoTT landing fiber. -/
+def potestativeFiberStepBV64 (pos neg pow imm bit : BitVec 64)
+    (gp rp gn rn : Bool) : BitVec 64 × BitVec 64 × SoundFiber :=
+  let immHit := (imm &&& bit) != 0#64
+  let powOk  := (pow &&& bit) != 0#64
+  let dp0    := if gp then pos ||| bit else pos
+  let dp     := if rp then dp0 &&& ~~~bit else dp0
+  let dn0    := if gn then neg ||| bit else neg
+  let dn     := if rn then dn0 &&& ~~~bit else dn0
+  let cohOk  := (dp &&& dn) == 0#64
+  let commit := (!immHit) && powOk && cohOk
+  let nextPos := if commit then dp else pos
+  let nextNeg := if commit then dn else neg
+  let fiber :=
+    if immHit then .holdImmunity
+    else if !powOk then .holdNoPower
+    else if !cohOk then .holdIncoherent
+    else .committed
+  (nextPos, nextNeg, fiber)
+
+/-- 37. `SoundFiber.code` is injective across all 14 HoTT landing fibers. -/
+theorem sound_fiber_code_injective (a b : SoundFiber) (h : a.code = b.code) : a = b := by
+  cases a <;> cases b <;> first | rfl | cases h
+
+/-- 38. Branchless `potestativeFiberStepBV64` agrees bit-for-bit with `gatedDualUpdateBV64`. -/
+theorem potestative_fiber_agrees_with_gated_dual_bv64
+    (pos neg pow imm bit : BitVec 64) (gp rp gn rn : Bool) :
+    let r := potestativeFiberStepBV64 pos neg pow imm bit gp rp gn rn
+    let g := gatedDualUpdateBV64 pos neg pow imm bit gp rp gn rn
+    r.1 = g.1 ∧ r.2.1 = g.2 := by
+  dsimp only [potestativeFiberStepBV64, gatedDualUpdateBV64]
+  by_cases hGate : (((pow &&& bit) == 0#64) || ((imm &&& bit) != 0#64)) = true
+  · simp only [hGate, ↓reduceIte]
+    bv_decide
+  · simp only [hGate, Bool.false_eq_true, ↓reduceIte]
+    by_cases hBad :
+        ((let dp0 := if gp then pos ||| bit else pos
+          let dp  := if rp then dp0 &&& ~~~bit else dp0
+          let dn0 := if gn then neg ||| bit else neg
+          let dn  := if rn then dn0 &&& ~~~bit else dn0
+          dp &&& dn) != 0#64) = true
+    · simp only [hBad, ↓reduceIte]
+      bv_decide
+    · simp only [hBad, Bool.false_eq_true, ↓reduceIte]
+      bv_decide
+
+/-- 39. Every non-committed fallback fiber (`≠ .committed`) is an exact identity retraction. -/
+theorem potestative_fallback_retraction_is_identity_bv64
+    (pos neg pow imm bit : BitVec 64) (gp rp gn rn : Bool)
+    (hFallback : (potestativeFiberStepBV64 pos neg pow imm bit gp rp gn rn).2.2 ≠ .committed) :
+    let r := potestativeFiberStepBV64 pos neg pow imm bit gp rp gn rn
+    r.1 = pos ∧ r.2.1 = neg := by
+  dsimp only [potestativeFiberStepBV64]
+  by_cases hImm : ((imm &&& bit) != 0#64) = true
+  · simp [hImm]
+  · by_cases hPow : ((pow &&& bit) != 0#64) = true
+    · by_cases hCoh :
+          ((let dp0 := if gp then pos ||| bit else pos
+            let dp  := if rp then dp0 &&& ~~~bit else dp0
+            let dn0 := if gn then neg ||| bit else neg
+            let dn  := if rn then dn0 &&& ~~~bit else dn0
+            dp &&& dn) == 0#64) = true
+      · simp [potestativeFiberStepBV64, hImm, hPow, hCoh] at hFallback
+      · simp [hImm, hPow, hCoh]
+    · simp [hImm, hPow]
+
+/-- 40. Both committed steps and fallback retractions preserve dual-duty coherence and KanLock bits. -/
+theorem potestative_commit_preserves_coherence_and_kanlock_bv64
+    (pos neg pow imm bit : BitVec 64) (gp rp gn rn : Bool)
+    (hCoh : (pos &&& neg) = 0#64) :
+    let r := potestativeFiberStepBV64 pos neg pow imm bit gp rp gn rn
+    (r.1 &&& r.2.1) = 0#64 ∧
+    (r.1 &&& imm) = (pos &&& imm) ∧
+    (r.2.1 &&& imm) = (neg &&& imm) := by
+  dsimp only [potestativeFiberStepBV64]
+  bv_decide
+
+/-! ## Atomic Multi-Slot Batch, Lex Specialis Priority SEARU & Chart Gluing -/
+
+/-- Atomic 2-slot Prepared-Statement batch admission model (`bind_mask` vs `policy | KanLock`,
+    disjoint target bits, low-evidence ceiling, and utterance span-hash equality). -/
+def batchAdmit2BV64
+    (act policyMask bindMask immMask t0 t1 : BitVec 64)
+    (evidCeil0 evidCeil1 spanHash0 spanHash1 : Bool) : BitVec 64 × SoundFiber :=
+  let dup := (t0 &&& t1) != 0#64
+  let slot0Ok :=
+    (t0 != 0#64) && ((t0 &&& ~~~bindMask) == 0#64) &&
+    ((t0 &&& (policyMask ||| immMask)) == 0#64) && evidCeil0 && spanHash0
+  let slot1Ok :=
+    (t1 != 0#64) && ((t1 &&& ~~~bindMask) == 0#64) &&
+    ((t1 &&& (policyMask ||| immMask)) == 0#64) && evidCeil1 && spanHash1
+  let allSpan := spanHash0 && spanHash1
+  let allPol := (!dup) && evidCeil0 && evidCeil1 &&
+    (t0 != 0#64) && ((t0 &&& ~~~bindMask) == 0#64) && ((t0 &&& (policyMask ||| immMask)) == 0#64) &&
+    (t1 != 0#64) && ((t1 &&& ~~~bindMask) == 0#64) && ((t1 &&& (policyMask ||| immMask)) == 0#64)
+  if (!allSpan) then (act, .fallbackSpan)
+  else if !(slot0Ok && slot1Ok && !dup && allPol) then (act, .fallbackPolicyViolation)
+  else (act ||| t0 ||| t1, .committed)
+
+/-- 41. Any batch rejection (policy violation, duplicate target, evid ceiling, or span hash mismatch)
+    acts as an exact HoTT identity retraction on the entire 64-bit active state. -/
+theorem batch_admit2_reject_is_identity_bv64
+    (act policyMask bindMask immMask t0 t1 : BitVec 64)
+    (evidCeil0 evidCeil1 spanHash0 spanHash1 : Bool)
+    (hReject :
+      (batchAdmit2BV64 act policyMask bindMask immMask t0 t1
+        evidCeil0 evidCeil1 spanHash0 spanHash1).2 ≠ .committed) :
+    (batchAdmit2BV64 act policyMask bindMask immMask t0 t1
+      evidCeil0 evidCeil1 spanHash0 spanHash1).1 = act := by
+  dsimp only [batchAdmit2BV64]
+  by_cases hs : (!(spanHash0 && spanHash1)) = true
+  · simp [hs]
+  · simp only [hs, Bool.false_eq_true, ↓reduceIte]
+    by_cases hp :
+      (!(((t0 != 0#64) && ((t0 &&& ~~~bindMask) == 0#64) &&
+          ((t0 &&& (policyMask ||| immMask)) == 0#64) && evidCeil0 && spanHash0) &&
+         ((t1 != 0#64) && ((t1 &&& ~~~bindMask) == 0#64) &&
+          ((t1 &&& (policyMask ||| immMask)) == 0#64) && evidCeil1 && spanHash1) &&
+         !((t0 &&& t1) != 0#64) &&
+         (!((t0 &&& t1) != 0#64) && evidCeil0 && evidCeil1 &&
+          (t0 != 0#64) && ((t0 &&& ~~~bindMask) == 0#64) && ((t0 &&& (policyMask ||| immMask)) == 0#64) &&
+          (t1 != 0#64) && ((t1 &&& ~~~bindMask) == 0#64) && ((t1 &&& (policyMask ||| immMask)) == 0#64)))) = true
+    · simp [hp]
+    · simp only [batchAdmit2BV64, hs, hp] at hReject
+      simp_all
+
+/-- 42. Any committed 2-slot batch preserves every policy and KanLock immunity bit. -/
+theorem batch_admit2_commit_preserves_policy_and_kanlock_bv64
+    (act policyMask bindMask immMask t0 t1 : BitVec 64)
+    (evidCeil0 evidCeil1 spanHash0 spanHash1 : Bool)
+    (hCommit :
+      (batchAdmit2BV64 act policyMask bindMask immMask t0 t1
+        evidCeil0 evidCeil1 spanHash0 spanHash1).2 = .committed) :
+    let next := (batchAdmit2BV64 act policyMask bindMask immMask t0 t1
+      evidCeil0 evidCeil1 spanHash0 spanHash1).1
+    (next &&& policyMask) = (act &&& policyMask) ∧
+    (next &&& immMask) = (act &&& immMask) := by
+  dsimp only [batchAdmit2BV64] at hCommit ⊢
+  by_cases hs : (!(spanHash0 && spanHash1)) = true
+  · simp [hs] at hCommit
+  · simp only [hs, Bool.false_eq_true, ↓reduceIte] at hCommit ⊢
+    by_cases hp :
+      (!(((t0 != 0#64) && ((t0 &&& ~~~bindMask) == 0#64) &&
+          ((t0 &&& (policyMask ||| immMask)) == 0#64) && evidCeil0 && spanHash0) &&
+         ((t1 != 0#64) && ((t1 &&& ~~~bindMask) == 0#64) &&
+          ((t1 &&& (policyMask ||| immMask)) == 0#64) && evidCeil1 && spanHash1) &&
+         !((t0 &&& t1) != 0#64) &&
+         (!((t0 &&& t1) != 0#64) && evidCeil0 && evidCeil1 &&
+          (t0 != 0#64) && ((t0 &&& ~~~bindMask) == 0#64) && ((t0 &&& (policyMask ||| immMask)) == 0#64) &&
+          (t1 != 0#64) && ((t1 &&& ~~~bindMask) == 0#64) && ((t1 &&& (policyMask ||| immMask)) == 0#64)))) = true
+    · simp [hp] at hCommit
+    · simp only [hp, Bool.false_eq_true, ↓reduceIte]
+      bv_decide
+
+/-- Weighted SEARU energy on a mutual-attack conflict pair `(A, B)`:
+    conflict penalty `65536`, non-maximal omission penalty `16384`, plus omitted priority weights. -/
+def lexSpecialisPairEnergy (keepA keepB : Bool) (wA wB : BitVec 16) : BitVec 32 :=
+  let conflictTerm : BitVec 32 := if keepA && keepB then 65536#32 else 0#32
+  let unblockedA : BitVec 32 := if (!keepA) && (!keepB) then 16384#32 else 0#32
+  let lossA : BitVec 32 := if !keepA then BitVec.zeroExtend 32 wA else 0#32
+  let lossB : BitVec 32 := if !keepB then BitVec.zeroExtend 32 wB else 0#32
+  conflictTerm + unblockedA + lossA + lossB
+
+/-- 43. Under strict Lex Specialis weight `0 < wB < wA <= 255`, keeping `{A}` uniquely minimizes energy. -/
+theorem lex_specialis_strict_priority_unique_min_bv
+    (wA wB : BitVec 16)
+    (hwBpos : 0#16 < wB) (hGt : wB < wA) (hwAmax : wA ≤ 255#16) :
+    lexSpecialisPairEnergy true false wA wB < lexSpecialisPairEnergy false true wA wB ∧
+    lexSpecialisPairEnergy true false wA wB < lexSpecialisPairEnergy true true wA wB ∧
+    lexSpecialisPairEnergy true false wA wB < lexSpecialisPairEnergy false false wA wB := by
+  dsimp only [lexSpecialisPairEnergy]
+  bv_decide
+
+/-- 44. When node `B` is pinned by `KanLock` (`keepB = true`), dropping `A` yields strictly lower
+    energy than keeping both `{A, B}` even under maximum adversarial weight `wA = 255`, `wB = 1`. -/
+theorem lex_specialis_kanlock_dominates_weight_bv
+    (wA wB : BitVec 16) (hwAmax : wA ≤ 255#16) (hwBmax : wB ≤ 255#16) :
+    lexSpecialisPairEnergy false true wA wB < lexSpecialisPairEnergy true true wA wB := by
+  dsimp only [lexSpecialisPairEnergy]
+  bv_decide
+
+/-- Cross-chart Sheaf / Chart Gluing admissibility predicate across two 64-node `SoundArena`s. -/
+def chartGlueValidBV64
+    (srcEst srcConf srcExport dstPolicy dstBind dstImm dstImport : BitVec 64) : Bool :=
+  (srcExport != 0#64) &&
+  ((srcExport &&& ~~~srcEst) == 0#64) &&
+  ((srcExport &&& srcConf) == 0#64) &&
+  (dstImport != 0#64) &&
+  ((dstImport &&& ~~~dstBind) == 0#64) &&
+  ((dstImport &&& dstPolicy) == 0#64) &&
+  ((dstImport &&& dstImm) == 0#64)
+
+/-- 45. Valid chart gluing exports zero conflicts from the source chart and mutates zero
+    policy or `KanLock` slots in the destination chart. -/
+theorem chart_glue_valid_conflict_free_and_kanlock_safe_bv64
+    (srcEst srcConf srcExport dstPolicy dstBind dstImm dstImport : BitVec 64)
+    (hGlue : chartGlueValidBV64 srcEst srcConf srcExport dstPolicy dstBind dstImm dstImport = true) :
+    (srcExport &&& srcEst) = srcExport ∧
+    (srcExport &&& srcConf) = 0#64 ∧
+    (dstImport &&& dstPolicy) = 0#64 ∧
+    (dstImport &&& dstImm) = 0#64 := by
+  unfold chartGlueValidBV64 at hGlue
+  bv_decide
+
+/-- 46. Gluing valid external witnesses into destination factual bindings is monotone and
+    preserves every slot outside `dstBind`. -/
+theorem chart_glue_monotone_bind_bv64
+    (srcEst srcConf srcExport dstPolicy dstBind dstImm dstImport dstAct : BitVec 64)
+    (hGlue : chartGlueValidBV64 srcEst srcConf srcExport dstPolicy dstBind dstImm dstImport = true) :
+    let nextAct := dstAct ||| dstImport
+    (dstAct &&& nextAct) = dstAct ∧
+    (nextAct &&& ~~~dstBind) = (dstAct &&& ~~~dstBind) := by
+  unfold chartGlueValidBV64 at hGlue
+  bv_decide
+
 end Sound.Bilattice

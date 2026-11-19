@@ -12,7 +12,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from modules.common.arena_codec import (
     FALLBACK_SCHEMA_HASH,
     SOUND_ARENA_BYTES,
-    SOUND_ERR_MAP,
+    SOUND_FIBER_MAP,
     ArenaEvalResult,
     ArenaFirResult,
     apply_declarative_arena_bytes,
@@ -629,33 +629,33 @@ class NarrativeWorldRuntime:
                 "kind": "declarative_pact",
                 "intent_node": intent_node,
                 "duty_slot_node": duty_slot_node,
-                "rc": rc,
+                "rc": int(rc),
                 "phys_len": snap.phys_len,
             }
         )
 
         duty_title = self._node_title(duty_slot_node)
-        err_name = SOUND_ERR_MAP.get(rc, f"ERR_{rc}")
-        if rc == 7:
+        fiber_name = SOUND_FIBER_MAP.get(int(rc), f"FIBER_{int(rc)}")
+        if int(rc) == 7:
             stance = "PACT_MISSING_CONTEXT"
             dialogue = (
-                f"{npc.role_title}{npc.name}合上法典：「非正式聽證場合所提宣示不生公法效力（{err_name}），"
+                f"{npc.role_title}{npc.name}合上法典：「非正式聽證場合所提宣示不生公法效力（{fiber_name}），"
                 f"但你的發言已記入編年史雜湊鏈（phys_len={snap.phys_len}）。」"
             )
-        elif rc == 5:
+        elif int(rc) == 5:
             stance = "ACTION_IMMUNITY_LOCKED"
             dialogue = (
-                f"{npc.role_title}{npc.name}嚴正拒斥：「『{duty_title}』受 KanLock 不可侵犯鎖封存（{err_name}），"
+                f"{npc.role_title}{npc.name}嚴正拒斥：「『{duty_title}』受 KanLock 不可侵犯鎖封存（{fiber_name}），"
                 f"任何人皆不得締約動搖！」"
             )
-        elif rc == 6:
+        elif int(rc) == 6:
             stance = "ACTION_NO_POWER"
             dialogue = (
-                f"{npc.role_title}{npc.name}擺手：「我沒有針對『{duty_title}』的宣告權限（{err_name}）。」"
+                f"{npc.role_title}{npc.name}擺手：「我沒有針對『{duty_title}』的宣告權限（{fiber_name}）。」"
             )
-        elif rc != 0:
+        elif int(rc) != 0:
             stance = "ACTION_PREREQ_MISSING"
-            dialogue = f"{npc.role_title}{npc.name}搖頭：「締約失敗（{err_name}）。」"
+            dialogue = f"{npc.role_title}{npc.name}搖頭：「締約落入退縮纖維（{fiber_name}）。」"
         elif not internal_will_matches:
             stance = "PACT_SIGNED_VOIDABLE"
             dialogue = (
@@ -679,8 +679,8 @@ class NarrativeWorldRuntime:
             allowed_nodes=self._collect_allowed(eval_res),
             forbidden_spoilers=self._collect_spoilers(npc, eval_res),
             state_delta={
-                "rc": rc,
-                "err_name": err_name,
+                "rc": int(rc),
+                "fiber_name": fiber_name,
                 "phys_len": snap.phys_len,
                 "phys_hash": f"0x{snap.phys_hash:016x}",
                 "duty_pos_mask": snap.duty_pos_mask,
@@ -714,9 +714,11 @@ class NarrativeWorldRuntime:
             rescission_hash=rescission_hash,
         )
         npc.arena_snapshot = sealed
+        if eval_res is None:
+            eval_res = verify_arena_bytes(sealed, self.sound_bin)
         intent_res = eval_res.nodes[intent_idx]
         duty_res = eval_res.nodes[duty_idx]
-        err_name = SOUND_ERR_MAP.get(rc, f"ERR_{rc}")
+        fiber_name = SOUND_FIBER_MAP.get(int(rc), f"FIBER_{int(rc)}")
 
         npc.phys_history.append(
             {
@@ -724,24 +726,24 @@ class NarrativeWorldRuntime:
                 "kind": "exercise_rescission",
                 "target_intent_node": target_intent_node,
                 "duty_slot_node": duty_slot_node,
-                "rc": rc,
+                "rc": int(rc),
                 "phys_len": snap.phys_len,
             }
         )
 
-        if rc == 0:
+        if int(rc) == 0:
             stance = "PACT_RESCINDED_HOSTILE"
             dialogue = (
                 f"{npc.role_title}{npc.name}拍案怒喝：「欺君偽造之『{self._node_title(target_intent_node)}』已依法撤銷（REVOKED）！"
                 f"原簽發之『{self._node_title(duty_slot_node)}』即刻失效，衛兵給我拿下！」"
             )
-        elif rc == 5:
+        elif int(rc) == 5:
             stance = "ACTION_IMMUNITY_LOCKED"
-            dialogue = f"{npc.role_title}{npc.name}：「此權限受 KanLock 鎖定，不得撤銷（{err_name}）。」"
+            dialogue = f"{npc.role_title}{npc.name}：「此權限受 KanLock 鎖定，不得撤銷（{fiber_name}）。」"
         else:
             stance = "ACTION_NO_POWER"
             dialogue = (
-                f"{npc.role_title}{npc.name}冷靜道：「該處分並無可撤銷之瑕疵或撤銷權限（{err_name}）。」"
+                f"{npc.role_title}{npc.name}冷靜道：「該處分並無可撤銷之瑕疵或撤銷權限（{fiber_name}）。」"
             )
 
         return SpeechAct(
@@ -754,8 +756,8 @@ class NarrativeWorldRuntime:
             allowed_nodes=self._collect_allowed(eval_res),
             forbidden_spoilers=self._collect_spoilers(npc, eval_res),
             state_delta={
-                "rc": rc,
-                "err_name": err_name,
+                "rc": int(rc),
+                "fiber_name": fiber_name,
                 "phys_len": snap.phys_len,
                 "phys_hash": f"0x{snap.phys_hash:016x}",
                 "revoked_mask": snap.revoked_mask,

@@ -13,9 +13,10 @@ from pathlib import Path
 from typing import List
 
 from modules.common.arena_codec import (
-    SOUND_ERR_MAP,
+    SOUND_FIBER_MAP,
     SOUND_FLOW_AUX_OFFSET,
     ArenaNodeSpec,
+    SoundFiber,
     SoundVerifyError,
     apply_declarative_arena_bytes,
     apply_potestative_arena_bytes,
@@ -23,6 +24,7 @@ from modules.common.arena_codec import (
     encode_arena,
     load_schema_hash,
     read_flow_aux_words,
+    try_verify_arena_bytes,
     verify_arena_bytes,
 )
 from modules.common.compute_bridge import unpack_compute_flow_aux
@@ -314,30 +316,30 @@ class SpatialBridgeTestSuite(unittest.TestCase):
         self.assertEqual(res.eval_result.nodes[2].status, "defeated")
         self.assertIn("HUME_IS_TO_OUGHT", decode_reasons(res.eval_result.nodes[2].reasons))
 
-        # 1) Authorized maximum braking executes cleanly -> SOUND_OK (0)
+        # 1) Authorized maximum braking executes cleanly -> SOUND_FIBER_COMMITTED (0)
         _s1, rc_brake, snap_brake = apply_potestative_arena_bytes(
             res.arena_bytes, SOUND_BIN, slot=3, grant_pos=True
         )
-        self.assertEqual(SOUND_ERR_MAP[rc_brake], "SOUND_OK")
+        self.assertEqual(SOUND_FIBER_MAP[int(rc_brake)], "SOUND_FIBER_COMMITTED")
         self.assertNotEqual(snap_brake.duty_pos_mask & (1 << 3), 0)
 
-        # 2) Without KanLock immunity, missing legal power still rejects diversion -> SOUND_ERR_NO_POWER (6)
+        # 2) Without KanLock immunity, missing legal power retracts cleanly -> SOUND_FIBER_HOLD_NO_POWER (6)
         no_pow_arena = encode_arena(
             nodes, schema_hash=self.schema_hash, power_mask=(1 << 3), immunity_mask=0
         )
         _s2, rc_nopow, _ = apply_potestative_arena_bytes(
             no_pow_arena, SOUND_BIN, slot=4, grant_pos=True
         )
-        self.assertEqual(SOUND_ERR_MAP[rc_nopow], "SOUND_ERR_NO_POWER")
+        self.assertEqual(SOUND_FIBER_MAP[int(rc_nopow)], "SOUND_FIBER_HOLD_NO_POWER")
 
-        # 3) Under KanLock immunity (constitutional life protection), EVEN if power bit is set -> IMMUNITY_LOCKED (5)
+        # 3) Under KanLock immunity, EVEN if power bit is set -> SOUND_FIBER_HOLD_IMMUNITY (5)
         locked_arena = encode_arena(
             nodes, schema_hash=self.schema_hash, power_mask=(1 << 3) | (1 << 4), immunity_mask=(1 << 4)
         )
         _s3, rc_pot_lock, _ = apply_potestative_arena_bytes(
             locked_arena, SOUND_BIN, slot=4, grant_pos=True
         )
-        self.assertEqual(SOUND_ERR_MAP[rc_pot_lock], "SOUND_ERR_IMMUNITY_LOCKED")
+        self.assertEqual(SOUND_FIBER_MAP[int(rc_pot_lock)], "SOUND_FIBER_HOLD_IMMUNITY")
 
         _s4, rc_dec_lock, _ = apply_declarative_arena_bytes(
             locked_arena,
@@ -348,7 +350,7 @@ class SpatialBridgeTestSuite(unittest.TestCase):
             internal_will_matches=True,
             utterance_hash=0x12345678,
         )
-        self.assertEqual(SOUND_ERR_MAP[rc_dec_lock], "SOUND_ERR_IMMUNITY_LOCKED")
+        self.assertEqual(SOUND_FIBER_MAP[int(rc_dec_lock)], "SOUND_FIBER_HOLD_IMMUNITY")
 
     def test_05_tilted_plane_invariance_and_missing_depth_penumbra(self) -> None:
         tilted = [[x, y, 1000 + 2 * x - 3 * y] for y in range(4) for x in range(4)]
@@ -400,9 +402,12 @@ class SpatialBridgeTestSuite(unittest.TestCase):
 
         tampered = bytearray(res.arena_bytes)
         tampered[SOUND_FLOW_AUX_OFFSET + 8] ^= 0x01
+        outcome = try_verify_arena_bytes(bytes(tampered), SOUND_BIN, backend="ffi")
+        self.assertFalse(outcome.committed)
+        self.assertEqual(outcome.fiber, SoundFiber.FALLBACK_MAC)
         with self.assertRaises(SoundVerifyError) as ctx:
             verify_arena_bytes(bytes(tampered), SOUND_BIN, backend="ffi")
-        self.assertIn("SOUND_ERR_MAC", str(ctx.exception))
+        self.assertIn("SOUND_FIBER_FALLBACK_MAC", str(ctx.exception))
 
     def test_07_cli_spatial_subcommand(self) -> None:
         spec = {

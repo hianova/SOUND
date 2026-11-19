@@ -94,8 +94,10 @@ def soundForestCtrlLayout : Flow.Schema.CellLayout64 :=
   Flow.Schema.CellLayout64.packed64 "forest_ctrl" "SoundForestCtrl64" "forest_ctrl" [
     ("utterance_bytes", .u32, 1), ("ambiguity_flags", .u32, 1),
     ("unresolved_anaphora", .u32, 1), ("num_candidates", .u32, 1),
-    ("last_verdict", .u32, 1), ("last_admitted_node", .u32, 1),
-    ("reserved", .u64, 5)
+    ("last_fiber", .u32, 1), ("last_admitted_node", .u32, 1),
+    ("ctrl_flags", .u32, 1), ("last_reject_reason", .u32, 1),
+    ("policy_mask", .u64, 1), ("bind_mask", .u64, 1),
+    ("policy_hash", .u64, 1), ("fiber_epoch", .u32, 1), ("reserved", .u32, 1)
   ]
 
 def soundSearuRepairLayout : Flow.Schema.CellLayout64 :=

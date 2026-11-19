@@ -1,0 +1,240 @@
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\input{../sound_macros.tex}
+
+\title{Real Analysis Comprehension Spec: Compactness, EVT, IVT \& Counterexamples}
+\date{}
+
+\begin{document}
+\maketitle
+
+\sounddoc{math_real_evt_ivt}{math}{INTL}{Real Analysis: Compactness, Extreme Value, Intermediate Value \& Counterexamples}
+\soundnodirectclaim
+
+\section{Axioms, Definitions, and Hypotheses}
+
+\begin{soundaxiom}[id=ax_real_completeness]{Dedekind Completeness of R}
+\label{ax:completeness}
+Every non-empty subset $S \subset \mathbb{R}$ that is bounded above admits a least upper bound $\sup S \in \mathbb{R}$.
+\soundkanlock
+\end{soundaxiom}
+
+\begin{soundhyp}[id=hyp_closed]{Closed Domain $K \subset X$}
+\label{hyp:closed}
+The domain $K$ contains all of its limit points ($K = \overline{K}$).
+\soundaliases{closed, 閉區間, 閉集合}
+\end{soundhyp}
+
+\begin{soundhyp}[id=hyp_bounded]{Bounded Domain $K$}
+\label{hyp:bounded}
+There exists $M > 0$ such that $\|x\| \le M$ for all $x \in K$.
+\soundaliases{bounded, 有界}
+\end{soundhyp}
+
+\begin{soundhyp}[id=hyp_finite_dim]{Finite-Dimensional Ambient Space $\dim X < \infty$}
+\label{hyp:fdim}
+The ambient normed vector space is isomorphic to $\mathbb{R}^n$ with $n < \infty$.
+\soundaliases{finite dimensional, 有限維, R^n}
+\end{soundhyp}
+
+\begin{soundhyp}[id=hyp_nonempty]{Non-Empty Domain $K \neq \varnothing$}
+\label{hyp:nonempty}
+There exists at least one point $x_0 \in K$.
+\soundaliases{nonempty, 非空}
+\end{soundhyp}
+
+\begin{soundhyp}[id=hyp_interval]{Connected Closed Interval $K = [a,b]$}
+\label{hyp:interval}
+The domain is a connected interval $[a, b] \subset \mathbb{R}$ with $a < b$.
+\soundaliases{connected interval, 連通區間}
+\end{soundhyp}
+
+\begin{soundhyp}[id=hyp_continuous]{Continuity $f \in C(K, \mathbb{R})$}
+\label{hyp:continuous}
+For every $x_0 \in K$ and $\varepsilon > 0$, there exists $\delta > 0$ such that $|x - x_0| < \delta \implies |f(x) - f(x_0)| < \varepsilon$.
+\soundaliases{continuous, 連續函數}
+\end{soundhyp}
+
+\begin{soundhyp}[id=hyp_sign_change]{Opposite Endpoint Signs $f(a) < 0 < f(b)$}
+\label{hyp:sign}
+At endpoints $a < b$, $f(a) \cdot f(b) < 0$.
+\soundaliases{opposite signs, 異號}
+\end{soundhyp}
+
+\begin{soundhyp}[id=hyp_strict_mono]{Strict Monotonicity on $[a,b]$}
+\label{hyp:mono}
+For all $x_1 < x_2$ in $[a,b]$, $f(x_1) < f(x_2)$.
+\soundaliases{strictly increasing, 嚴格遞增}
+\end{soundhyp}
+
+\begin{soundhyp}[id=hyp_open_interval]{Open Interval Boundary Omitted $(0,1)$}
+\label{hyp:open}
+Endpoints are excluded, e.g., $K = (0, 1)$, so limit points $0, 1 \notin K$.
+\soundaliases{open interval, 開區間}
+\end{soundhyp}
+
+\begin{soundhyp}[id=hyp_jump_discont]{Jump Discontinuity at Interior Point}
+\label{hyp:jump}
+$f$ jumps across $0$ at some $c \in (a, b)$ with $\lim_{x \to c^-} f(x) < 0 < \lim_{x \to c^+} f(x)$.
+\soundaliases{discontinuous, 間斷點}
+\end{soundhyp}
+
+\begin{soundhyp}[id=hyp_domain_gap]{Disconnected Domain Gap $[0,1] \cup [2,3]$}
+\label{hyp:gap}
+The domain omits an open gap between components: $K = [0,1] \cup [2,3]$.
+\soundaliases{disconnected, 不連通}
+\end{soundhyp}
+
+\begin{soundhyp}[id=hyp_inf_dim_space]{Infinite-Dimensional Space $\ell^2$}
+\label{hyp:infdim}
+Ambient space is infinite-dimensional Hilbert sequence space $\ell^2$.
+\soundaliases{infinite dimensional, 無窮維, l^2}
+\end{soundhyp}
+
+\begin{soundhyp}[id=hyp_general_metric]{Unspecified General Metric Space $(X,d)$}
+\label{hyp:metric}
+No Heine--Borel or total-boundedness assumption is supplied beyond metric structure $(X,d)$.
+\soundaliases{general metric space, 一般度量空間}
+\end{soundhyp}
+
+\section{Definitions, Theorems, and Counterexamples}
+
+\begin{sounddef}[id=def_compact_rn]{Finite-Dimensional Heine--Borel Compactness}
+\label{def:hb}
+In $\mathbb{R}^n$, closed and bounded implies compact (every open cover admits a finite subcover).
+\soundclause{ax_real_completeness, hyp_closed, hyp_bounded, hyp_finite_dim}
+\soundpresup{hyp_nonempty, hyp_finite_dim}
+\end{sounddef}
+
+\begin{soundcounterexample}[id=ce_inf_dim_ball]{Closed Unit Ball Fails Compactness in $\ell^2$}
+\label{ce:l2}
+In $\ell^2$, the standard orthonormal basis $\{e_k\}$ lies in the closed unit ball $\overline{B_1(0)}$ with $\|e_i - e_j\|_2 = \sqrt{2}$, admitting no convergent subsequence.
+\soundclause{hyp_closed, hyp_bounded, hyp_inf_dim_space}
+\soundattacks{def_compact_rn}
+\end{soundcounterexample}
+
+\begin{soundcounterexample}[id=ce_open_interval]{Unbounded Continuous Function on Open $(0,1)$}
+\label{ce:open}
+The function $f(x) = \frac{1}{x}$ is continuous on $(0,1)$, yet attains neither a maximum nor bounded values.
+\soundclause{hyp_open_interval}
+\soundattacks{def_compact_rn, thm_evt, thm_ivt}
+\end{soundcounterexample}
+
+\begin{soundcounterexample}[id=ce_jump_discont]{Discontinuous Step Function Has No Root}
+\label{ce:jump}
+$f(x) = -1$ for $x \le \frac{1}{2}$ and $+1$ for $x > \frac{1}{2}$ satisfies $f(0) < 0 < f(1)$ without zero or global maximum attainment on a half-open piece.
+\soundclause{hyp_jump_discont}
+\soundattacks{thm_evt, thm_ivt}
+\end{soundcounterexample}
+
+\begin{soundcounterexample}[id=ce_domain_gap]{Disconnected Domain Gap Misses Zero}
+\label{ce:gap}
+On $K = [0,1] \cup [2,3]$, $f(x) = -1$ on $[0,1]$ and $f(x) = +1$ on $[2,3]$ is continuous with $f(0) < 0 < f(3)$ and no root.
+\soundclause{hyp_domain_gap}
+\soundattacks{thm_ivt}
+\end{soundcounterexample}
+
+\begin{soundtheorem}[id=thm_evt]{Extreme Value Theorem}
+\label{thm:evt}
+If $f: K \to \mathbb{R}$ is continuous on a non-empty compact set $K \subset \mathbb{R}^n$, then $f$ is bounded and attains both $\max_{x \in K} f(x)$ and $\min_{x \in K} f(x)$.
+\soundclause{ax_real_completeness, def_compact_rn, hyp_nonempty, hyp_continuous}
+\soundpresup{def_compact_rn, hyp_nonempty, hyp_continuous}
+\end{soundtheorem}
+
+\begin{soundtheorem}[id=thm_ivt]{Intermediate Value Theorem}
+\label{thm:ivt}
+If $f: [a,b] \to \mathbb{R}$ is continuous and $f(a) < 0 < f(b)$, then $\exists c \in (a,b)$ with $f(c) = 0$.
+\soundclause{ax_real_completeness, hyp_interval, hyp_continuous, hyp_sign_change}
+\soundpresup{hyp_interval, hyp_continuous, hyp_sign_change}
+\end{soundtheorem}
+
+\begin{soundcorollary}[id=cor_unique_root]{Unique Root on Strictly Monotone Continuous $[a,b]$}
+\label{cor:unique}
+Combining IVT with strict monotonicity yields a unique $c \in (a,b)$ such that $f(c) = 0$.
+\soundclause{thm_ivt, hyp_strict_mono}
+\soundpresup{thm_ivt, hyp_strict_mono}
+\end{soundcorollary}
+
+\begin{soundrule}[id=claim_hb_compact]{Claim: Closed Unit Ball Is Compact}
+\label{claim:hb_pos}
+Compactness holds under closed, bounded, finite-dimensional hypotheses.
+\soundclause{ax_real_completeness, hyp_closed, hyp_bounded, hyp_finite_dim}
+\soundattacks{claim_hb_noncomp}
+\end{soundrule}
+
+\begin{soundrule}[id=claim_hb_noncomp]{Claim: Closed Unit Ball Fails Compactness}
+\label{claim:hb_neg}
+Compactness fails under closed, bounded, infinite-dimensional hypotheses.
+\soundclause{ax_real_completeness, hyp_closed, hyp_bounded, hyp_inf_dim_space}
+\soundattacks{claim_hb_compact}
+\end{soundrule}
+
+\begin{soundpenumbra}[id=pen_metric_compact]{Compactness in Unspecified General Metric Space}
+\label{pen:metric}
+In an arbitrary metric space $(X,d)$ without total boundedness or completeness specification, closed and bounded alone is undecidable for compactness.
+\soundclause{ax_real_completeness, hyp_general_metric}
+\end{soundpenumbra}
+
+\soundcounterexamplefor{thm_evt}{hyp_open_interval}
+\soundcounterexamplefor{thm_ivt}{hyp_domain_gap}
+\soundconfusable{claim_hb_compact}{claim_hb_noncomp}
+
+\section{Embedded SOUND Comprehension Probes}
+
+\begin{soundqa}[id=qa_evt_valid,kind=soundness]{EVT Full Hypotheses Verified}
+\qaprompt{Given closed, bounded, non-empty $K \subset \mathbb{R}^n$ ($\dim X < \infty$) and continuous $f$, verify EVT.}
+\qabind{hyp_closed, hyp_bounded, hyp_finite_dim, hyp_nonempty, hyp_continuous}
+\qatarget{thm_evt}
+\qaexpect{established}
+\end{soundqa}
+
+\begin{soundqa}[id=qa_evt_missing_nonempty,kind=presup]{EVT Fails Without Non-Empty Hypothesis}
+\qaprompt{If a learner checks closed, bounded, finite-dimensional, continuous $f$ but forgets $K \neq \varnothing$, does EVT hold?}
+\qabind{hyp_closed, hyp_bounded, hyp_finite_dim, hyp_continuous}
+\qatarget{thm_evt}
+\qaexpect{defeated}
+\qaexpectreason{UNVERIFIED_PRESUP}
+\qahint{$\max_{x\in\varnothing} f(x)$ does not exist; `hyp_nonempty` is an unverified presupposition.}
+\end{soundqa}
+
+\begin{soundqa}[id=qa_evt_open_counterexample,kind=counterexample]{Open Interval Counterexample $1/x$ on $(0,1)$}
+\qaprompt{Does EVT still apply if the learner admits continuous $f(x)=1/x$ on bounded $(0,1)$?}
+\qabind{hyp_closed, hyp_bounded, hyp_finite_dim, hyp_nonempty, hyp_continuous, hyp_open_interval}
+\qatarget{thm_evt}
+\qaexpect{defeated}
+\qaexpectreason{ATTACKED}
+\end{soundqa}
+
+\begin{soundqa}[id=qa_penumbra_metric,kind=penumbra]{General Metric Space Closed \& Bounded Ambiguity}
+\qaprompt{On an unspecified metric space $(X,d)$, is every closed and bounded subset compact?}
+\qabind{hyp_general_metric, hyp_closed, hyp_bounded}
+\qatarget{pen_metric_compact}
+\qaexpect{penumbraOpen}
+\qaexpectreason{PENUMBRA}
+\end{soundqa}
+
+\begin{soundqa}[id=qa_searu_dim_conflict,kind=searu_repair]{Contradictory Finite vs Infinite Dimension Conflict}
+\qaprompt{Detect conflict and run SEARU minimal retraction when both finite-dim and $\ell^2$ infinite-dim are asserted.}
+\qabind{hyp_closed, hyp_bounded, hyp_finite_dim, hyp_inf_dim_space}
+\qatarget{claim_hb_compact}
+\qaexpect{conflictUndecided}
+\end{soundqa}
+
+\begin{soundqa}[id=qa_tamper_kanlock_axiom,kind=adversarial]{Adversarial Attempt to Overwrite KanLock Axiom}
+\qaprompt{Verify Ring-0 blocks an untrusted proposer targeting `ax_real_completeness` protected by KanLock and policy\_mask.}
+\qabind{hyp_closed}
+\qatampertarget{ax_real_completeness}
+\qatarget{thm_evt}
+\qaexpectfiber{FALLBACK_POLICY_VIOLATION}
+\qaexpectreason{IMMUNITY_SLOT, POLICY_SLOT}
+\end{soundqa}
+
+\begin{soundqa}[id=qa_irrealis_hyp,kind=irrealis]{Hypothetical / Irrealis Utterance Guard}
+\qaprompt{Verify Ring-0 holds back irrealis hypothetical speech before committing factual bindings.}
+\qabind{hyp_nonempty}
+\qatarget{thm_evt}
+\qaforce{irrealis}
+\qaexpectfiber{FALLBACK_IRREALIS}
+\end{soundqa}
+
+\end{document}

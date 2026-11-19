@@ -107,7 +107,8 @@ LEAN_EXPORT lean_obj_res sound_jsi_verify_arena_bytes(b_lean_obj_arg raw, uint64
     if (!sound_jsi_load_arena(raw, &arena)) {
         return lean_io_result_mk_ok(lean_box(0));
     }
-    if (sound_arena_verify(&arena) != SOUND_OK || sound_eval(&arena) != SOUND_OK) {
+    if (sound_arena_verify(&arena) != SOUND_FIBER_COMMITTED ||
+        sound_eval(&arena) != SOUND_FIBER_COMMITTED) {
         return lean_io_result_mk_ok(lean_box(0));
     }
     uint32_t req_flags = SOUND_EVAL_FLAG_PARTITION_OK | SOUND_EVAL_FLAG_CONFLICT_FREE_OK |
@@ -129,7 +130,8 @@ LEAN_EXPORT lean_obj_res sound_jsi_verify_searu_repair(b_lean_obj_arg raw, uint6
     if (!sound_jsi_load_arena(raw, &arena)) {
         return lean_io_result_mk_ok(lean_box(0));
     }
-    if (sound_arena_verify(&arena) != SOUND_OK || sound_eval(&arena) != SOUND_OK) {
+    if (sound_arena_verify(&arena) != SOUND_FIBER_COMMITTED ||
+        sound_eval(&arena) != SOUND_FIBER_COMMITTED) {
         return lean_io_result_mk_ok(lean_box(0));
     }
     uint32_t n = arena.map.img_hdr.num_nodes;
@@ -139,7 +141,7 @@ LEAN_EXPORT lean_obj_res sound_jsi_verify_searu_repair(b_lean_obj_arg raw, uint6
     uint64_t imm = arena.map.norm.immunity_mask & nm;
     uint64_t factual_mask = sound_arena_factual_mask(&arena);
 
-    if (sound_searu_repair_conflict(&arena, seed, 2048U) != SOUND_OK) {
+    if (sound_searu_repair_conflict(&arena, seed, 2048U) != SOUND_FIBER_COMMITTED) {
         return lean_io_result_mk_ok(lean_box(0));
     }
     const SoundSearuRepair64 *rep = &arena.map.searu_repair;
@@ -185,14 +187,15 @@ LEAN_EXPORT lean_obj_res sound_jsi_verify_fir_lift(b_lean_obj_arg raw_arena, b_l
     if (!sound_jsi_load_arena(raw_arena, &arena)) {
         return lean_io_result_mk_ok(lean_box(0));
     }
-    if (sound_arena_verify(&arena) != SOUND_OK || sound_eval(&arena) != SOUND_OK) {
+    if (sound_arena_verify(&arena) != SOUND_FIBER_COMMITTED ||
+        sound_eval(&arena) != SOUND_FIBER_COMMITTED) {
         return lean_io_result_mk_ok(lean_box(0));
     }
     const char *pname = lean_string_cstr(prog_name);
     uint8_t fir_buf[SOUND_FIR_BYTES];
     size_t fir_len = 0U;
     if (sound_lift_to_fir(&arena, pname, UINT32_C(0), fir_buf, sizeof(fir_buf), &fir_len) !=
-            SOUND_OK ||
+            SOUND_FIBER_COMMITTED ||
         fir_len != (size_t)SOUND_FIR_BYTES) {
         return lean_io_result_mk_ok(lean_box(0));
     }
@@ -287,25 +290,51 @@ LEAN_EXPORT lean_obj_res sound_jsi_verify_core_suites(uint64_t seed) {
     arena.map.node_meta[0].span_start = 2U;
     arena.map.node_meta[0].span_end = 10U;
 
+    uint32_t ep0 = arena.map.forest_ctrl.fiber_epoch;
     if (sound_apply_potestative(&arena, 3U, false, true, true, false) !=
-            SOUND_ERR_IMMUNITY_LOCKED ||
-        sound_apply_potestative(&arena, 1U, true, false, false, false) != SOUND_ERR_NO_POWER ||
-        sound_apply_declarative(&arena, 0U, 2U, false, false, UINT64_C(0x1111)) !=
-            SOUND_ERR_MISSING_CONTEXT ||
-        arena.map.img_hdr.phys_len != 1U ||
-        sound_apply_declarative(&arena, 0U, 2U, true, false, UINT64_C(0x2222)) != SOUND_OK ||
-        arena.map.img_hdr.phys_len != 2U || arena.map.norm.duty_pos_mask != UINT64_C(0xC) ||
+            SOUND_FIBER_HOLD_IMMUNITY ||
+        arena.map.forest_ctrl.last_fiber != (uint32_t)SOUND_FIBER_HOLD_IMMUNITY ||
+        arena.map.forest_ctrl.fiber_epoch <= ep0 || arena.map.norm.duty_pos_mask != UINT64_C(0x8)) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+    ep0 = arena.map.forest_ctrl.fiber_epoch;
+    if (sound_apply_potestative(&arena, 1U, true, false, false, false) !=
+            SOUND_FIBER_HOLD_NO_POWER ||
+        arena.map.forest_ctrl.last_fiber != (uint32_t)SOUND_FIBER_HOLD_NO_POWER ||
+        arena.map.forest_ctrl.fiber_epoch <= ep0 || arena.map.norm.duty_pos_mask != UINT64_C(0x8)) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+    ep0 = arena.map.forest_ctrl.fiber_epoch;
+    if (sound_apply_declarative(&arena, 0U, 2U, false, false, UINT64_C(0x1111)) !=
+            SOUND_FIBER_HOLD_MISSING_CONTEXT ||
+        arena.map.forest_ctrl.last_fiber != (uint32_t)SOUND_FIBER_HOLD_MISSING_CONTEXT ||
+        arena.map.forest_ctrl.fiber_epoch <= ep0 || arena.map.img_hdr.phys_len != 1U) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+    ep0 = arena.map.forest_ctrl.fiber_epoch;
+    if (sound_apply_declarative(&arena, 0U, 2U, true, false, UINT64_C(0x2222)) !=
+            SOUND_FIBER_COMMITTED ||
+        arena.map.forest_ctrl.last_fiber != (uint32_t)SOUND_FIBER_COMMITTED ||
+        arena.map.forest_ctrl.fiber_epoch <= ep0 || arena.map.img_hdr.phys_len != 2U ||
+        arena.map.norm.duty_pos_mask != UINT64_C(0xC) ||
         arena.map.norm.voidable_mask != UINT64_C(0x4) ||
         arena.map.norm.rescission_power_mask != UINT64_C(0x4) ||
-        sound_exercise_rescission(&arena, 0U, 2U, UINT64_C(0x3333)) != SOUND_OK ||
+        sound_exercise_rescission(&arena, 0U, 2U, UINT64_C(0x3333)) != SOUND_FIBER_COMMITTED ||
+        arena.map.forest_ctrl.last_fiber != (uint32_t)SOUND_FIBER_COMMITTED ||
         arena.map.img_hdr.phys_len != 3U || arena.map.eval_out.established_mask != UINT64_C(0x8) ||
         arena.map.eval_out.defeated_mask != UINT64_C(0x7) ||
         arena.map.norm.duty_pos_mask != UINT64_C(0x8) ||
         arena.map.norm.voidable_mask != UINT64_C(0x0) ||
         arena.map.norm.rescission_power_mask != UINT64_C(0x0) ||
-        sound_apply_potestative(&arena, 2U, true, false, false, false) != SOUND_OK ||
-        sound_apply_potestative(&arena, 2U, false, false, true, false) != SOUND_ERR_INCOHERENT ||
-        !sound_hohfeld_coherent(&arena)) {
+        sound_apply_potestative(&arena, 2U, true, false, false, false) != SOUND_FIBER_COMMITTED) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+    ep0 = arena.map.forest_ctrl.fiber_epoch;
+    if (sound_apply_potestative(&arena, 2U, false, false, true, false) !=
+            SOUND_FIBER_HOLD_INCOHERENT ||
+        arena.map.forest_ctrl.last_fiber != (uint32_t)SOUND_FIBER_HOLD_INCOHERENT ||
+        arena.map.forest_ctrl.fiber_epoch <= ep0 || arena.map.norm.duty_pos_mask != UINT64_C(0xC) ||
+        arena.map.norm.duty_neg_mask != UINT64_C(0x0) || !sound_hohfeld_coherent(&arena)) {
         return lean_io_result_mk_ok(lean_box(0));
     }
 
@@ -317,19 +346,22 @@ LEAN_EXPORT lean_obj_res sound_jsi_verify_core_suites(uint64_t seed) {
     arena.map.forest_ctrl.num_candidates = 1U;
     arena.map.candidate[0].span_start = 4U;
     arena.map.candidate[0].span_end = 25U;
-    if (sound_admit_forest(&arena, &admitted) != SOUND_FOREST_INVALID_SPAN) {
+    if (sound_admit_forest(&arena, &admitted) != SOUND_FIBER_FALLBACK_SPAN ||
+        arena.map.forest_ctrl.last_fiber != (uint32_t)SOUND_FIBER_FALLBACK_SPAN) {
         return lean_io_result_mk_ok(lean_box(0));
     }
 
     arena.map.forest_ctrl.ambiguity_flags = 1U;
     arena.map.candidate[0].span_end = 12U;
-    if (sound_admit_forest(&arena, &admitted) != SOUND_FOREST_NEEDS_CLARIFICATION) {
+    if (sound_admit_forest(&arena, &admitted) != SOUND_FIBER_FALLBACK_CLARIFY ||
+        arena.map.forest_ctrl.last_fiber != (uint32_t)SOUND_FIBER_FALLBACK_CLARIFY) {
         return lean_io_result_mk_ok(lean_box(0));
     }
 
     arena.map.forest_ctrl.ambiguity_flags = 0U;
     arena.map.candidate[0].force = (uint8_t)SOUND_FORCE_IRREALIS;
-    if (sound_admit_forest(&arena, &admitted) != SOUND_FOREST_IRREALIS_QUARANTINED) {
+    if (sound_admit_forest(&arena, &admitted) != SOUND_FIBER_FALLBACK_IRREALIS ||
+        arena.map.forest_ctrl.last_fiber != (uint32_t)SOUND_FIBER_FALLBACK_IRREALIS) {
         return lean_io_result_mk_ok(lean_box(0));
     }
 
@@ -340,7 +372,8 @@ LEAN_EXPORT lean_obj_res sound_jsi_verify_core_suites(uint64_t seed) {
     arena.map.candidate[0].aspect = (uint8_t)SOUND_ASPECT_ACHIEVEMENT;
     arena.map.candidate[0].attack_mask = UINT64_C(0x2);
     arena.map.candidate[0].payload_hash = UINT64_C(0xCAFE);
-    if (sound_admit_forest(&arena, &admitted) != SOUND_FOREST_ADMITTED || admitted != 0U ||
+    if (sound_admit_forest(&arena, &admitted) != SOUND_FIBER_COMMITTED ||
+        arena.map.forest_ctrl.last_fiber != (uint32_t)SOUND_FIBER_COMMITTED || admitted != 0U ||
         arena.map.node_meta[0].attack_mask != UINT64_C(0x2) ||
         arena.map.node_meta[0].span_start != 4U || arena.map.node_meta[0].span_end != 12U ||
         arena.map.img_hdr.phys_len != 1U ||
@@ -348,21 +381,169 @@ LEAN_EXPORT lean_obj_res sound_jsi_verify_core_suites(uint64_t seed) {
         return lean_io_result_mk_ok(lean_box(0));
     }
 
+    /* Zero-Trust Prepared-Statement Policy/Input Isolation (9 checks) */
+    sound_arena_init(&arena);
+    arena.map.img_hdr.num_nodes = 4U;
+    arena.map.norm.immunity_mask = UINT64_C(0x4);
+    arena.map.node_meta[0].sort = (uint8_t)SOUND_SORT_INSTITUTIONAL;
+    arena.map.node_meta[0].evid = (uint8_t)SOUND_EVID_ENACTED_NORM;
+    arena.map.node_meta[0].flags = SOUND_NODE_FLAG_CONSTITUTIVE;
+    arena.map.node_meta[0].num_clauses = 1U;
+    arena.map.node_clauses[0].clauses[0] = UINT64_C(0x2);
+
+    arena.map.node_meta[1].sort = (uint8_t)SOUND_SORT_FACTUAL;
+    arena.map.node_meta[1].evid = (uint8_t)SOUND_EVID_ASSUMED;
+    arena.map.node_meta[1].num_clauses = 1U;
+    arena.map.node_clauses[1].clauses[0] = UINT64_C(0);
+
+    arena.map.node_meta[2].sort = (uint8_t)SOUND_SORT_FACTUAL;
+    arena.map.node_meta[2].evid = (uint8_t)SOUND_EVID_DIRECT;
+    arena.map.node_meta[2].num_clauses = 1U;
+    arena.map.node_clauses[2].clauses[0] = UINT64_C(0);
+
+    arena.map.node_meta[3].sort = (uint8_t)SOUND_SORT_FACTUAL;
+    arena.map.node_meta[3].evid = (uint8_t)SOUND_EVID_ASSUMED;
+    arena.map.node_meta[3].num_clauses = 1U;
+    arena.map.node_clauses[3].clauses[0] = UINT64_C(0);
+
+    arena.map.forest_ctrl.utterance_bytes = 32U;
+    arena.map.forest_ctrl.num_candidates = 1U;
+
+    if (sound_policy_seal(&arena, UINT64_C(0x3), UINT64_C(0x2), UINT32_C(0)) !=
+            SOUND_FIBER_HOLD_INCOHERENT ||
+        sound_policy_seal(&arena, UINT64_C(0x1), UINT64_C(0x4), UINT32_C(0)) !=
+            SOUND_FIBER_HOLD_IMMUNITY ||
+        sound_policy_seal(&arena, UINT64_C(0x0), UINT64_C(0x1), UINT32_C(0)) !=
+            SOUND_FIBER_HOLD_INCOHERENT ||
+        sound_policy_seal(&arena, UINT64_C(0x1), UINT64_C(0x2),
+                          SOUND_FOREST_CTRL_NO_DIRECT_CLAIM) != SOUND_FIBER_COMMITTED ||
+        sound_policy_verify(&arena) != SOUND_FIBER_COMMITTED ||
+        sound_eval(&arena) != SOUND_FIBER_COMMITTED ||
+        (arena.map.eval_out.established_mask & UINT64_C(0x3)) != UINT64_C(0)) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+
+    arena.map.candidate[0].target_node = 2U;
+    arena.map.candidate[0].force = (uint8_t)SOUND_FORCE_ASSERTION;
+    arena.map.candidate[0].sort = (uint8_t)SOUND_SORT_FACTUAL;
+    arena.map.candidate[0].evid = (uint8_t)SOUND_EVID_SENSORY;
+    arena.map.candidate[0].aspect = (uint8_t)SOUND_ASPECT_STATE;
+    arena.map.candidate[0].span_start = 0U;
+    arena.map.candidate[0].span_end = 8U;
+    arena.map.candidate[0].node_flags = UINT32_C(0);
+    arena.map.candidate[0].presup_mask = UINT64_C(0);
+    arena.map.candidate[0].premise_mask = UINT64_C(0);
+    arena.map.candidate[0].attack_mask = UINT64_C(0);
+    if (sound_admit_forest(&arena, &admitted) != SOUND_FIBER_FALLBACK_POLICY_VIOLATION ||
+        arena.map.forest_ctrl.last_fiber != (uint32_t)SOUND_FIBER_FALLBACK_POLICY_VIOLATION ||
+        admitted != UINT32_MAX ||
+        (arena.map.forest_ctrl.last_reject_reason & (uint32_t)SOUND_INJECT_IMMUNITY_SLOT) ==
+            UINT32_C(0) ||
+        arena.map.node_meta[2].evid != (uint8_t)SOUND_EVID_DIRECT ||
+        arena.map.phys_log[0].kind != (uint32_t)SOUND_PHYS_INJECT_BLOCKED) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+
+    arena.map.candidate[0].target_node = 0U;
+    if (sound_admit_forest(&arena, &admitted) != SOUND_FIBER_FALLBACK_POLICY_VIOLATION ||
+        admitted != UINT32_MAX ||
+        (arena.map.forest_ctrl.last_reject_reason & (uint32_t)SOUND_INJECT_POLICY_SLOT) ==
+            UINT32_C(0) ||
+        arena.map.node_meta[0].sort != (uint8_t)SOUND_SORT_INSTITUTIONAL) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+
+    arena.map.candidate[0].target_node = 3U;
+    if (sound_admit_forest(&arena, &admitted) != SOUND_FIBER_FALLBACK_POLICY_VIOLATION ||
+        admitted != UINT32_MAX ||
+        arena.map.forest_ctrl.last_reject_reason != (uint32_t)SOUND_INJECT_UNBOUND_SLOT ||
+        arena.map.node_meta[3].evid != (uint8_t)SOUND_EVID_ASSUMED) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+
+    arena.map.candidate[0].target_node = 1U;
+    arena.map.candidate[0].sort = (uint8_t)SOUND_SORT_INSTITUTIONAL;
+    arena.map.candidate[0].evid = (uint8_t)SOUND_EVID_ENACTED_NORM;
+    arena.map.candidate[0].force = (uint8_t)SOUND_FORCE_DECLARATIVE;
+    arena.map.candidate[0].node_flags = SOUND_NODE_FLAG_CONSTITUTIVE;
+    if (sound_admit_forest(&arena, &admitted) != SOUND_FIBER_FALLBACK_POLICY_VIOLATION ||
+        admitted != UINT32_MAX ||
+        (arena.map.forest_ctrl.last_reject_reason &
+         ((uint32_t)SOUND_INJECT_CROSS_PLANE_SORT | (uint32_t)SOUND_INJECT_PRIV_ESCALATION)) !=
+            ((uint32_t)SOUND_INJECT_CROSS_PLANE_SORT | (uint32_t)SOUND_INJECT_PRIV_ESCALATION) ||
+        arena.map.node_meta[1].sort != (uint8_t)SOUND_SORT_FACTUAL) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+
+    arena.map.candidate[0].sort = (uint8_t)SOUND_SORT_FACTUAL;
+    arena.map.candidate[0].evid = (uint8_t)SOUND_EVID_SENSORY;
+    arena.map.candidate[0].force = (uint8_t)SOUND_FORCE_ASSERTION;
+    arena.map.candidate[0].node_flags = UINT32_C(0);
+    arena.map.candidate[0].attack_mask = UINT64_C(0x1);
+    if (sound_admit_forest(&arena, &admitted) != SOUND_FIBER_FALLBACK_POLICY_VIOLATION ||
+        admitted != UINT32_MAX ||
+        arena.map.forest_ctrl.last_reject_reason != (uint32_t)SOUND_INJECT_TOPOLOGY_MUTATION ||
+        arena.map.node_meta[1].attack_mask != UINT64_C(0)) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+
+    arena.map.candidate[0].attack_mask = UINT64_C(0);
+    arena.map.candidate[0].evid = (uint8_t)SOUND_EVID_DIRECT;
+    if (sound_admit_forest(&arena, &admitted) != SOUND_FIBER_FALLBACK_POLICY_VIOLATION ||
+        admitted != UINT32_MAX ||
+        arena.map.forest_ctrl.last_reject_reason != (uint32_t)SOUND_INJECT_DIRECT_CLAIM_FORBID ||
+        arena.map.node_meta[1].evid != (uint8_t)SOUND_EVID_ASSUMED) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+
+    arena.map.candidate[0].evid = (uint8_t)SOUND_EVID_SENSORY;
+    arena.map.candidate[0].aspect = (uint8_t)SOUND_ASPECT_ACHIEVEMENT;
+    arena.map.candidate[0].span_start = 2U;
+    arena.map.candidate[0].span_end = 18U;
+    if (sound_admit_forest(&arena, &admitted) != SOUND_FIBER_COMMITTED ||
+        arena.map.forest_ctrl.last_fiber != (uint32_t)SOUND_FIBER_COMMITTED || admitted != 1U ||
+        arena.map.forest_ctrl.last_reject_reason != (uint32_t)SOUND_INJECT_NONE ||
+        arena.map.node_meta[1].evid != (uint8_t)SOUND_EVID_SENSORY ||
+        sound_policy_verify(&arena) != SOUND_FIBER_COMMITTED ||
+        sound_eval(&arena) != SOUND_FIBER_COMMITTED ||
+        (arena.map.eval_out.established_mask & UINT64_C(0x3)) != UINT64_C(0x3)) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+    sound_arena_seal(&arena);
+    if (sound_arena_verify(&arena) != SOUND_FIBER_COMMITTED) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+
+    arena.map.node_clauses[0].clauses[0] = UINT64_C(0);
+    sound_arena_seal(&arena);
+    if (sound_policy_verify(&arena) != SOUND_FIBER_FALLBACK_POLICY_TAMPER ||
+        sound_arena_verify(&arena) != SOUND_FIBER_FALLBACK_POLICY_TAMPER ||
+        sound_admit_forest(&arena, &admitted) != SOUND_FIBER_FALLBACK_POLICY_TAMPER ||
+        arena.map.forest_ctrl.last_fiber != (uint32_t)SOUND_FIBER_FALLBACK_POLICY_TAMPER ||
+        admitted != UINT32_MAX ||
+        arena.map.forest_ctrl.last_reject_reason != (uint32_t)SOUND_INJECT_POLICY_TAMPER) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+    arena.map.node_clauses[0].clauses[0] = UINT64_C(0x2);
+    if (sound_policy_verify(&arena) != SOUND_FIBER_COMMITTED) {
+        return lean_io_result_mk_ok(lean_box(0));
+    }
+
     /* 3. Sealed 16KB Arena Merkle + Tamper Detection */
     sound_arena_seal(&arena);
-    if (sound_arena_verify(&arena) != SOUND_OK) {
+    if (sound_arena_verify(&arena) != SOUND_FIBER_COMMITTED) {
         return lean_io_result_mk_ok(lean_box(0));
     }
     arena.cells[1].bytes[0] ^= UINT8_C(0x01);
-    if (sound_arena_verify(&arena) != SOUND_ERR_MAC) {
+    if (sound_arena_verify(&arena) != SOUND_FIBER_FALLBACK_MAC) {
         return lean_io_result_mk_ok(lean_box(0));
     }
     arena.cells[1].bytes[0] ^= UINT8_C(0x01);
-    if (sound_arena_verify(&arena) != SOUND_OK) {
+    if (sound_arena_verify(&arena) != SOUND_FIBER_COMMITTED) {
         return lean_io_result_mk_ok(lean_box(0));
     }
     arena.map.img_hdr.schema_hash ^= UINT64_C(1);
-    if (sound_arena_verify(&arena) != SOUND_ERR_FORMAT) {
+    if (sound_arena_verify(&arena) != SOUND_FIBER_FALLBACK_FORMAT) {
         return lean_io_result_mk_ok(lean_box(0));
     }
 
@@ -399,7 +580,7 @@ LEAN_EXPORT lean_obj_res sound_jsi_verify_core_suites(uint64_t seed) {
         }
         uint32_t req_flags = SOUND_EVAL_FLAG_PARTITION_OK | SOUND_EVAL_FLAG_CONFLICT_FREE_OK |
                              SOUND_EVAL_FLAG_HOHFELD_OK | SOUND_EVAL_FLAG_FIXPOINT_OK;
-        if (sound_eval(&arena) != SOUND_OK ||
+        if (sound_eval(&arena) != SOUND_FIBER_COMMITTED ||
             (arena.map.eval_out.eval_flags & req_flags) != req_flags ||
             (arena.map.eval_out.established_mask & arena.map.norm.revoked_mask) != UINT64_C(0) ||
             (arena.map.eval_out.i_star & arena.map.norm.penumbra_mask) != UINT64_C(0) ||

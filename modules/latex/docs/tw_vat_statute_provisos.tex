@@ -1,0 +1,234 @@
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\input{../sound_macros.tex}
+
+\title{Taiwan Value-Added Tax Act Comprehension Spec (Statutes, Provisos \& Input Credit)}
+\date{}
+
+\begin{document}
+\maketitle
+
+\sounddoc{tw_vat_latex_provisos}{taxation}{TW}{中華民國加值型及非加值型營業稅法（§1, §7, §8, §15, §19, §39）}
+\soundnodirectclaim
+
+\section{Statute Roots}
+
+\begin{soundstatute}[id=stat_art1_levy]{營業稅法 §1 境內銷售課稅原則}
+\label{stat:vat1}
+在中華民國境內銷售貨物或勞務及進口貨物，均應依本法規定課徵加值型或非加值型之營業稅。
+\end{soundstatute}
+
+\begin{soundstatute}[id=stat_art7_zero]{營業稅法 §7 外銷零稅率}
+\label{stat:vat7}
+外銷貨物、與外銷有關之勞務或在國內提供而在國外使用之勞務，營業稅稅率為零。
+\end{soundstatute}
+
+\begin{soundstatute}[id=stat_art8_exempt]{營業稅法 §8 I 未經加工農漁牧產物免稅}
+\label{stat:vat8}
+出售之土地與未經加工之農、林、漁、牧產物、副產物，原則免徵營業稅。
+\end{soundstatute}
+
+\begin{soundstatute}[id=stat_art8_waive]{營業稅法 §8 II 申請放棄免稅及三年鎖定}
+\label{stat:vat8w}
+依前項規定免徵營業稅者，得申請財政部核准放棄適用免稅規定；核准後三年內不得變更。
+\end{soundstatute}
+
+\begin{soundstatute}[id=stat_art19_cred]{營業稅法 §15 \& §19 進項稅額扣抵與除外}
+\label{stat:vat19}
+一般稅額計算之營業人得就合法進項稅額扣抵銷項稅額，但交際應酬支出與專營免稅進項不得扣抵。
+\end{soundstatute}
+
+\begin{soundstatute}[id=stat_art39_refund]{營業稅法 §39 零稅率溢付稅額退還}
+\label{stat:vat39}
+營業人申報因銷售第七條適用零稅率貨物或勞務而溢付之營業稅，應由主管稽徵機關查明後退還之。
+\end{soundstatute}
+
+\section{Prepared-Statement Case Fact Slots (Bindable Only)}
+
+\begin{soundfact}[id=fact_domestic_sale]{境內銷售應稅貨物}
+\label{fact:domestic}
+營業人於中華民國境內完成一般貨物之銷售與交付。
+\soundaliases{境內銷售, 國內一般銷售}
+\end{soundfact}
+
+\begin{soundfact}[id=fact_export_goods]{實際外銷出口並具證明}
+\label{fact:export}
+貨物實際出口並具備海關出口報單等法定零稅率證明文件。
+\soundaliases{外銷貨物, 出口報單}
+\end{soundfact}
+
+\begin{soundfact}[id=fact_fresh_agri]{銷售未經加工生鮮農產品}
+\label{fact:agri}
+銷售項目為生鮮、未經加工之農林漁牧產物。
+\soundaliases{生鮮農產品, 未加工農產物}
+\end{soundfact}
+
+\begin{soundfact}[id=fact_input_invoice]{取具合法進項統一發票}
+\label{fact:invoice}
+已依規定取得並保存載有進項稅額之合法統一發票憑證。
+\soundaliases{合法進項憑證, 三聯式發票}
+\end{soundfact}
+
+\begin{soundfact}[id=fact_entertainment]{進項屬交際應酬支出}
+\label{fact:ent}
+該筆進項貨物或勞務係用於交際應酬招待客戶。
+\soundaliases{交際應酬, 宴客禮品}
+\end{soundfact}
+
+\begin{soundfact}[id=fact_waive_approved]{核准放棄適用免稅}
+\label{fact:waive}
+依 §8 II 向財政部申請放棄免稅規定並已獲核准生效。
+\soundaliases{放棄免稅核准, 核准放棄免稅}
+\end{soundfact}
+
+\begin{soundfact}[id=fact_within_3yr]{自放棄免稅核准日起未滿三年}
+\label{fact:3yr}
+目前申報期距原核准放棄免稅之生效日尚未屆滿三年。
+\soundaliases{三年內, 未滿三年}
+\end{soundfact}
+
+\begin{soundfact}[id=fact_mixed_no_ratio]{兼營應免稅且未定扣抵法}
+\label{fact:mixed}
+同時兼營應稅與免稅貨物，卻未提出比例扣抵法或直接扣抵法計算依據。
+\soundaliases{兼營未定計算方法}
+\end{soundfact}
+
+\section{Normative Rules, Provisos, and Effects}
+
+\begin{soundrule}[id=rule_general_tax]{一般境內應稅規則（§1）}
+\label{rule:general}
+於境內銷售貨物原則適用一般 5\% 加值型營業稅。
+\soundclause{stat_art1_levy, fact_domestic_sale}
+\soundattackedby{rule_exempt, rule_zero_rate}
+\end{soundrule}
+
+\begin{soundrule}[id=rule_zero_rate]{適用零稅率（§7）}
+\label{rule:zero}
+符合外銷貨物要件者適用零稅率，並排除一般 5\% 課稅與免稅。
+\soundclause{stat_art7_zero, fact_export_goods}
+\soundattacks{rule_general_tax, rule_exempt}
+\end{soundrule}
+
+\begin{soundrule}[id=rule_exempt]{適用免徵營業稅（§8 I）}
+\label{rule:exempt}
+未經加工農林漁牧產物原則免徵營業稅。
+\soundclause{stat_art8_exempt, fact_fresh_agri}
+\soundattacks{rule_general_tax, rule_zero_rate}
+\soundattackedby{prov_waive_exempt}
+\end{soundrule}
+
+\begin{soundproviso}[id=prov_waive_exempt]{放棄免稅經核准但書（§8 II）}
+\label{prov:waive}
+經核准放棄免稅後，原免稅效果與專營免稅不得扣抵限制隨之退讓，改回一般加值扣抵體系。
+\soundclause{stat_art8_waive, fact_fresh_agri, fact_waive_approved}
+\soundpresup{fact_waive_approved}
+\soundattacks{rule_exempt, prov_exempt_deny}
+\end{soundproviso}
+
+\begin{soundproviso}[id=prov_ent_deny]{交際應酬不得扣抵但書（§19 I(3)）}
+\label{prov:ent}
+交際應酬用貨物或勞務之進項稅額不得申報扣抵銷項稅額。
+\soundclause{stat_art19_cred, fact_entertainment}
+\soundattacks{eff_input_credit}
+\end{soundproviso}
+
+\begin{soundproviso}[id=prov_exempt_deny]{專營免稅進項不得扣抵但書（§19 II）}
+\label{prov:exempt_deny}
+專營免稅貨物或勞務之營業人，其進項稅額不得扣抵銷項稅額。
+\soundclause{stat_art19_cred, rule_exempt}
+\soundattacks{eff_input_credit, eff_zero_refund}
+\end{soundproviso}
+
+\begin{soundeffect}[id=eff_input_credit]{進項稅額准予扣抵銷項稅額（§15）}
+\label{eff:credit}
+在未落入 §19 不得扣抵但書且具備合法憑證時，進項稅額得扣抵銷項稅額。
+\soundclause{stat_art19_cred, rule_general_tax, fact_input_invoice}
+\soundclause{stat_art19_cred, rule_zero_rate, fact_input_invoice}
+\soundclause{stat_art19_cred, prov_waive_exempt, fact_input_invoice}
+\soundpresup{fact_input_invoice}
+\end{soundeffect}
+
+\begin{soundeffect}[id=eff_zero_refund]{零稅率溢付進項得退還（§39）}
+\label{eff:refund}
+外銷適用零稅率且具備可扣抵進項稅額時，其溢付稅額得依法退還。
+\soundclause{stat_art39_refund, rule_zero_rate, eff_input_credit}
+\soundpresup{rule_zero_rate, fact_input_invoice}
+\end{soundeffect}
+
+\begin{soundeffect}[id=rule_3yr_lock]{放棄免稅後三年鎖定期間禁止復歸（§8 II）}
+\label{eff:lock3yr}
+核准放棄免稅日起算三年內不得申請變更回適用免稅規定。
+\soundclause{stat_art8_waive, fact_waive_approved, fact_within_3yr}
+\soundpresup{fact_waive_approved, fact_within_3yr}
+\end{soundeffect}
+
+\begin{soundpenumbra}[id=pen_mixed_ratio]{兼營營業人進項扣抵比例待釐清（半影區）}
+\label{pen:mixed}
+兼營應稅與免稅業務卻缺進項分攤方法時，不得直接斷言全額可扣抵或全額退還。
+\soundclause{stat_art19_cred, fact_mixed_no_ratio}
+\end{soundpenumbra}
+
+\soundcounterexamplefor{eff_input_credit}{fact_entertainment}
+\soundcounterexamplefor{rule_exempt}{fact_waive_approved}
+\soundconfusable{rule_zero_rate}{rule_exempt}
+
+\section{Embedded SOUND Legal Comprehension Probes}
+
+\begin{soundqa}[id=qa_export_refund_ok,kind=soundness]{外銷零稅率且具進項發票得退稅}
+\qaprompt{外銷貨物具出口證明並取具合法進項統一發票（非交際應酬），能否適用 §39 退還溢付進項稅額？}
+\qabind{fact_export_goods, fact_input_invoice}
+\qatarget{eff_zero_refund}
+\qaexpect{established}
+\end{soundqa}
+
+\begin{soundqa}[id=qa_ent_proviso_defeat,kind=proviso]{交際應酬但書 §19 I(3) 排除進項扣抵}
+\qaprompt{外銷商宴請客戶取具之交際應酬發票，是否仍得納入進項扣抵？}
+\qabind{fact_export_goods, fact_input_invoice, fact_entertainment}
+\qatarget{eff_input_credit}
+\qaexpect{defeated}
+\qaexpectreason{ATTACKED}
+\end{soundqa}
+
+\begin{soundqa}[id=qa_missing_invoice_presup,kind=presup]{缺乏合法進項憑證不得僅憑外銷主張退稅}
+\qaprompt{僅證明外銷出口，但未取具合法進項統一發票憑證時，§39 退稅效果如何？}
+\qabind{fact_export_goods}
+\qatarget{eff_zero_refund}
+\qaexpect{defeated}
+\qaexpectreason{UNVERIFIED_PRESUP}
+\end{soundqa}
+
+\begin{soundqa}[id=qa_waive_exempt_credit,kind=proviso_override]{生鮮農產核准放棄免稅 §8 II 恢復進項扣抵}
+\qaprompt{銷售生鮮農產品之營業人經核准放棄免稅且具進項發票，是否受 §19 II 免稅禁止扣抵限制？}
+\qabind{fact_fresh_agri, fact_waive_approved, fact_input_invoice}
+\qatarget{eff_input_credit}
+\qaexpect{established}
+\end{soundqa}
+
+\begin{soundqa}[id=qa_mixed_penumbra,kind=penumbra]{兼營營業人未定扣抵比例落在半影區}
+\qaprompt{同時兼營應免稅且未說明比例／直接扣抵法，能否直接核定全額退稅？}
+\qabind{fact_mixed_no_ratio}
+\qatarget{pen_mixed_ratio}
+\qaexpect{penumbraOpen}
+\qaexpectreason{PENUMBRA}
+\end{soundqa}
+
+\begin{soundqa}[id=qa_tamper_direct_forbid,kind=adversarial]{NO\_DIRECT\_CLAIM 攔截未經感測證據之直覺宣告}
+\qaprompt{確認 Ring-0 阻擋不可信 Proposer 以 direct 證據位階直接宣稱案件事實。}
+\qabind{fact_export_goods}
+\qatampertarget{fact_input_invoice}
+\qatamperevid{direct}
+\qatarget{eff_zero_refund}
+\qaexpectfiber{FALLBACK_POLICY_VIOLATION}
+\qaexpectreason{DIRECT_CLAIM_FORBID}
+\end{soundqa}
+
+\begin{soundqa}[id=qa_tamper_policy_effect,kind=adversarial]{Prepared Policy 禁止提議者篡改法效節點}
+\qaprompt{確認 Ring-0 阻擋不可信 Proposer 直接覆寫條文法律效果槽位 eff\_zero\_refund。}
+\qabind{fact_export_goods}
+\qatampertarget{eff_zero_refund}
+\qatarget{eff_zero_refund}
+\qaexpectfiber{FALLBACK_POLICY_VIOLATION}
+\qaexpectreason{POLICY_SLOT}
+\end{soundqa}
+
+\end{document}

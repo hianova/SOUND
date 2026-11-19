@@ -96,3 +96,7 @@ python3 -m unittest discover -s modules/tests -v
 1. **規則與條文選擇（[`proposer_contract.json`](common/proposer_contract.json)）**：LLM 只負責將純文字題幹映射為 Topic Pack 節點 ID、`unverified_facts`、`universal_scope` 與 `claim`，交由 `mcq_engine.py` ＋ `./build/sound` 做出可稽核的形式判決。
 2. **精確有理數計算（[`compute_bridge.py`](common/compute_bridge.py) / [`compute_bridge_contract.json`](common/compute_bridge_contract.json)）**：LLM 只輸出精簡 JSON DAG（缺值設 `null`），由 `Fraction` 引擎求確值並依 `SOUND` 節點雙向閘控；缺值或除零自動傳遞成 `penumbraOpen`，整數子集可降階至 `FLOW` `"FIR1"` 與無 `import` 的 Lean 4 `decide` 證明。
 3. **空間幾何與感測檢定（[`spatial_bridge.py`](common/spatial_bridge.py) / [`spatial_bridge_contract.json`](common/spatial_bridge_contract.json)）**：將感知層輸入的深度採樣、遮擋點陣、邊界框序列、煞停參數與候選分數轉成確定性布林／半影謂詞，寫入 `16,384B` `SoundArena` 再交由 `SOUND` Ring-0 裁決。
+4. **語意 LaTeX ↔ SOUND 理解問答介面（[`modules/latex/`](latex/cli.py)）**：
+   * 透過 [`sound_macros.tex`](latex/sound_macros.tex) 為數學講義（如 [`real_analysis_evt_ivt.tex`](latex/docs/real_analysis_evt_ivt.tex)）與法規條文（如 [`tw_vat_statute_provisos.tex`](latex/docs/tw_vat_statute_provisos.tex)）標註節點、`KanLock` 公理、`bind` 參數槽、前提 `\soundpresup`、反例／但書 `\soundattacks` 與內嵌問答 `\begin{soundqa}`（同時相容標準 LaTeX PDF 排版）。
+   * [`latex_compiler.py`](latex/latex_compiler.py) 精確追蹤 `.tex` UTF-8 位元組區間並封存成 `16,384B` Prepared-Statement `SoundArena`（可匯出標準 Topic Pack）。
+   * [`qa_verifier.py`](latex/qa_verifier.py) 與 [`latex_emitter.py`](latex/latex_emitter.py) 支援互動問答（`python3 -m modules.latex.cli interactive <file.tex>`）、蘇格拉底式條件移除測試（`ablate`）、`SEARU` 衝突最小撤回與結構完整的可稽核 `.tex` 報告反匯出（`emit-report`）。

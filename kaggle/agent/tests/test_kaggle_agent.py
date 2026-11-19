@@ -13,7 +13,7 @@ import zipfile
 from pathlib import Path
 
 from modules.common.arena_codec import (
-    SOUND_ERR_MAP,
+    SOUND_FIBER_MAP,
     SOUND_FIR_BYTES,
     SOUND_MAX_NODES,
     decode_reasons,
@@ -193,8 +193,8 @@ class KaggleAgentTestSuite(unittest.TestCase):
         self.assertIn("REVOKED", decode_reasons(submit_after.reasons))
 
         locked = self.gate.provisional_admit_and_rescind_demo(s9, lock_target=True)
-        self.assertEqual(SOUND_ERR_MAP[int(locked["decl_rc"])], "SOUND_ERR_IMMUNITY_LOCKED")
-        self.assertEqual(SOUND_ERR_MAP[int(locked["resc_rc"])], "SOUND_ERR_IMMUNITY_LOCKED")
+        self.assertEqual(SOUND_FIBER_MAP[int(locked["decl_rc"])], "SOUND_FIBER_HOLD_IMMUNITY")
+        self.assertEqual(SOUND_FIBER_MAP[int(locked["resc_rc"])], "SOUND_FIBER_HOLD_IMMUNITY")
 
     def test_05_large_networkx_graph_bounded_projection(self) -> None:
         g = make_synthetic_large_graph(1500)

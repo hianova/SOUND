@@ -8,6 +8,7 @@ import struct
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
+from enum import IntEnum
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -26,7 +27,7 @@ SOUND_FLOW_AUX_WORDS = SOUND_FLOW_AUX_CELLS * 8
 
 FNV1A_OFFSET = 0xCBF29CE484222325
 FNV1A_PRIME = 0x00000100000001B3
-FALLBACK_SCHEMA_HASH = 0x9A13D2D8CB8DE1E4
+FALLBACK_SCHEMA_HASH = 0x1F627D29685823B6
 
 NODE_FLAG_CONSTITUTIVE = 1
 SOUND_EVAL_FLAGS_REQ = 0x0F
@@ -42,17 +43,31 @@ STATUS_CODE_MAP: Dict[int, str] = {
     3: "penumbraOpen",
 }
 
-SOUND_ERR_MAP: Dict[int, str] = {
-    0: "SOUND_OK",
-    1: "SOUND_ERR_NULL",
-    2: "SOUND_ERR_BOUNDS",
-    3: "SOUND_ERR_FORMAT",
-    4: "SOUND_ERR_MAC",
-    5: "SOUND_ERR_IMMUNITY_LOCKED",
-    6: "SOUND_ERR_NO_POWER",
-    7: "SOUND_ERR_MISSING_CONTEXT",
-    8: "SOUND_ERR_INCOHERENT",
-}
+class SoundFiber(IntEnum):
+    """Canonical 14-branch HoTT fallback fiber replacing split OOP error/verdict codes."""
+
+    COMMITTED = 0
+    FALLBACK_NULL = 1
+    FALLBACK_BOUNDS = 2
+    FALLBACK_FORMAT = 3
+    FALLBACK_MAC = 4
+    HOLD_IMMUNITY = 5
+    HOLD_NO_POWER = 6
+    HOLD_MISSING_CONTEXT = 7
+    HOLD_INCOHERENT = 8
+    FALLBACK_POLICY_TAMPER = 9
+    FALLBACK_CLARIFY = 10
+    FALLBACK_IRREALIS = 11
+    FALLBACK_SPAN = 12
+    FALLBACK_POLICY_VIOLATION = 13
+
+
+SOUND_FIBER_MAP: Dict[int, str] = {f.value: f"SOUND_FIBER_{f.name}" for f in SoundFiber}
+
+
+def fiber_name(code: int) -> str:
+    """Return canonical `SOUND_FIBER_*` name for integer fiber code."""
+    return SOUND_FIBER_MAP.get(int(code), f"SOUND_FIBER_UNKNOWN({code})")
 
 SORT_MAP: Dict[str, int] = {
     "factual": 0,
@@ -87,6 +102,37 @@ REASON_FLAGS: Dict[int, str] = {
     0x80: "NO_ACTIVE_CLAUSE",
 }
 
+SOUND_FOREST_CTRL_PREPARED_SEALED = 1 << 0
+SOUND_FOREST_CTRL_NO_DIRECT_CLAIM = 1 << 1
+SOUND_FOREST_CTRL_KEYED_SIPHASH = 1 << 2
+SOUND_FOREST_CTRL_PROPOSER_LOW_EVID = 1 << 3
+SOUND_MAX_CANDIDATES = 16
+SOUND_FLOW_AUX_PRIORITY_CELL = 36
+SOUND_FLOW_AUX_GLUE_CELL = 37
+SOUND_GLUE_MAGIC_VER = 0x00010000314C4753
+
+FORCE_MAP: Dict[str, int] = {
+    "assertion": 0,
+    "query": 1,
+    "directive": 2,
+    "declarative": 3,
+    "irrealis": 4,
+}
+
+SOUND_INJECT_REASON_FLAGS: Dict[int, str] = {
+    1 << 0: "IMMUNITY_SLOT",
+    1 << 1: "POLICY_SLOT",
+    1 << 2: "UNBOUND_SLOT",
+    1 << 3: "CROSS_PLANE_SORT",
+    1 << 4: "PRIV_ESCALATION",
+    1 << 5: "TOPOLOGY_MUTATION",
+    1 << 6: "POLICY_TAMPER",
+    1 << 7: "DIRECT_CLAIM_FORBID",
+    1 << 8: "EVID_CEILING",
+    1 << 9: "SPAN_HASH_MISMATCH",
+    1 << 10: "DUPLICATE_TARGET",
+}
+
 _SCHEMA_HASH_RE = re.compile(
     r"SOUND_SCHEMA_SCHEMA_HASH\s+UINT64_C\((0x[0-9A-Fa-f]+)\)"
 )
@@ -108,6 +154,7 @@ _LIFT_FIR_RE = re.compile(
     r"^\[lift-fir\]\s+\S+\s+->\s+\S+\s+\((\d+)B,\s+name=(\S+),\s+active=(0x[0-9a-fA-F]+)\)\s+\|\s+"
     r"mult_bits=(\d+)\s+mult_depth=(\d+)\s+unitary=OK\s*$"
 )
+_CLI_FIBER_RE = re.compile(r"fiber=(\d+)")
 
 
 class SoundVerifyError(RuntimeError):
@@ -215,6 +262,118 @@ def decode_reasons(reasons: int) -> List[str]:
     return out
 
 
+@dataclass(frozen=True)
+class ForestCtrlSnapshot:
+    """Typed view of SoundForestCtrl64 stored at cell 216 (offset 13,824)."""
+
+    utterance_bytes: int
+    ambiguity_flags: int
+    unresolved_anaphora: int
+    num_candidates: int
+    last_fiber: int
+    last_admitted_node: int
+    ctrl_flags: int
+    last_reject_reason: int
+    policy_mask: int
+    bind_mask: int
+    policy_hash: int
+    fiber_epoch: int
+    reserved: int
+
+
+@dataclass(frozen=True)
+class ChartGlueSnapshot:
+    """Typed view of `SoundChartGlue64` stored in `flow_aux[37]` (cell 255)."""
+
+    magic_ver: int
+    src_merkle_root: int
+    src_policy_hash: int
+    src_export_mask: int
+    dst_import_mask: int
+    glue_hash: int
+    epoch_flags: int
+    reserved: int
+
+
+@dataclass(frozen=True)
+class CandidateSpec:
+    """Typed Layer-0 candidate slot specification for `SoundCandidate64`."""
+
+    target_node: int
+    force: str = "assertion"
+    sort: str = "factual"
+    evid: str = "sensory"
+    aspect: str = "state"
+    span_start: int = 0
+    span_end: int = 16
+    node_flags: int = 0
+    presup_mask: int = 0
+    premise_mask: int = 0
+    attack_mask: int = 0
+    payload_hash: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class ArenaVerifyOutcome:
+    """Value-first HoTT verification outcome returning landing SoundFiber without throwing."""
+
+    fiber: SoundFiber
+    eval_result: Optional[ArenaEvalResult]
+    forest_ctrl: Optional[ForestCtrlSnapshot] = None
+
+    @property
+    def committed(self) -> bool:
+        return self.fiber == SoundFiber.COMMITTED
+
+
+def decode_inject_reasons(mask: int) -> List[str]:
+    """Decode SOUND_INJECT_* bitmask into ordered human-readable reason names."""
+    out: List[str] = []
+    for bit, name in sorted(SOUND_INJECT_REASON_FLAGS.items()):
+        if mask & bit:
+            out.append(name)
+    return out
+
+
+def read_forest_ctrl(arena_bytes: bytes) -> ForestCtrlSnapshot:
+    """Unpack `SoundForestCtrl64` from cell 216 (offset `216 * 64 = 13824`)."""
+    if len(arena_bytes) != SOUND_ARENA_BYTES:
+        raise ValueError(f"Expected {SOUND_ARENA_BYTES}B SoundArena, got {len(arena_bytes)}B")
+    vals = struct.unpack_from("<8I3Q2I", arena_bytes, 216 * 64)
+    return ForestCtrlSnapshot(
+        utterance_bytes=vals[0],
+        ambiguity_flags=vals[1],
+        unresolved_anaphora=vals[2],
+        num_candidates=vals[3],
+        last_fiber=vals[4],
+        last_admitted_node=vals[5],
+        ctrl_flags=vals[6],
+        last_reject_reason=vals[7],
+        policy_mask=vals[8],
+        bind_mask=vals[9],
+        policy_hash=vals[10],
+        fiber_epoch=vals[11],
+        reserved=vals[12],
+    )
+
+
+def read_chart_glue(arena_bytes: bytes) -> ChartGlueSnapshot:
+    """Unpack `SoundChartGlue64` from cell 255 (`flow_aux[37]`, offset `255 * 64 = 16320`)."""
+    if len(arena_bytes) != SOUND_ARENA_BYTES:
+        raise ValueError(f"Expected {SOUND_ARENA_BYTES}B SoundArena, got {len(arena_bytes)}B")
+    vals = struct.unpack_from("<8Q", arena_bytes, (218 + SOUND_FLOW_AUX_GLUE_CELL) * 64)
+    return ChartGlueSnapshot(
+        magic_ver=vals[0],
+        src_merkle_root=vals[1],
+        src_policy_hash=vals[2],
+        src_export_mask=vals[3],
+        dst_import_mask=vals[4],
+        glue_hash=vals[5],
+        epoch_flags=vals[6],
+        reserved=vals[7],
+    )
+
+
 def fnv1a_64(data: bytes, seed: int = FNV1A_OFFSET) -> int:
     """Compute exact 64-bit FNV-1a matching `sound_fnv1a_bytes` in `sound.h`."""
     h = seed & 0xFFFFFFFFFFFFFFFF
@@ -222,6 +381,58 @@ def fnv1a_64(data: bytes, seed: int = FNV1A_OFFSET) -> int:
         h ^= b
         h = (h * FNV1A_PRIME) & 0xFFFFFFFFFFFFFFFF
     return h
+
+
+def _rotl64(x: int, bits: int) -> int:
+    x &= 0xFFFFFFFFFFFFFFFF
+    return ((x << bits) | (x >> (64 - bits))) & 0xFFFFFFFFFFFFFFFF
+
+
+def _sipround(v0: int, v1: int, v2: int, v3: int) -> Tuple[int, int, int, int]:
+    m = 0xFFFFFFFFFFFFFFFF
+    v0 = (v0 + v1) & m
+    v1 = _rotl64(v1, 13) ^ v0
+    v0 = _rotl64(v0, 32)
+    v2 = (v2 + v3) & m
+    v3 = _rotl64(v3, 16) ^ v2
+    v0 = (v0 + v3) & m
+    v3 = _rotl64(v3, 21) ^ v0
+    v2 = (v2 + v1) & m
+    v1 = _rotl64(v1, 17) ^ v2
+    v2 = _rotl64(v2, 32)
+    return v0, v1, v2, v3
+
+
+def siphash24_u64(k0: int, k1: int, data: bytes) -> int:
+    """Pure-Python SipHash-2-4 matching `sound_siphash24_bytes` bit-for-bit."""
+    m = 0xFFFFFFFFFFFFFFFF
+    kk0 = k0 & m
+    kk1 = k1 & m
+    v0 = 0x736F6D6570736575 ^ kk0
+    v1 = 0x646F72616E646F6D ^ kk1
+    v2 = 0x6C7967656E657261 ^ kk0
+    v3 = 0x7465646279746573 ^ kk1
+    buf = 0
+    buflen = 0
+    for byte in data:
+        buf |= (byte & 0xFF) << (buflen * 8)
+        buflen += 1
+        if buflen == 8:
+            v3 ^= buf
+            v0, v1, v2, v3 = _sipround(v0, v1, v2, v3)
+            v0, v1, v2, v3 = _sipround(v0, v1, v2, v3)
+            v0 ^= buf
+            buf = 0
+            buflen = 0
+    b = ((len(data) & 0xFF) << 56) | buf
+    v3 ^= b
+    v0, v1, v2, v3 = _sipround(v0, v1, v2, v3)
+    v0, v1, v2, v3 = _sipround(v0, v1, v2, v3)
+    v0 ^= b
+    v2 ^= 0xFF
+    for _ in range(4):
+        v0, v1, v2, v3 = _sipround(v0, v1, v2, v3)
+    return (v0 ^ v1 ^ v2 ^ v3) & m
 
 
 def load_schema_hash(repo_root: Path) -> int:
@@ -310,6 +521,116 @@ def _configure_libsound(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.POINTER(ctypes.c_size_t),
     ]
     lib.sound_ring0_lift_to_fir.restype = ctypes.c_uint32
+
+    lib.sound_ring0_policy_seal.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+        ctypes.c_uint32,
+    ]
+    lib.sound_ring0_policy_seal.restype = ctypes.c_uint32
+
+    lib.sound_ring0_policy_verify.argtypes = [ctypes.c_void_p]
+    lib.sound_ring0_policy_verify.restype = ctypes.c_uint32
+
+    lib.sound_ring0_admit_forest.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_uint32),
+    ]
+    lib.sound_ring0_admit_forest.restype = ctypes.c_uint32
+
+    lib.sound_ring0_siphash24.argtypes = [
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+    ]
+    lib.sound_ring0_siphash24.restype = ctypes.c_uint64
+
+    lib.sound_ring0_policy_seal_keyed.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+        ctypes.c_uint32,
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+    ]
+    lib.sound_ring0_policy_seal_keyed.restype = ctypes.c_uint32
+
+    lib.sound_ring0_policy_verify_keyed.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+    ]
+    lib.sound_ring0_policy_verify_keyed.restype = ctypes.c_uint32
+
+    lib.sound_ring0_admit_forest_with_utterance.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_uint32),
+    ]
+    lib.sound_ring0_admit_forest_with_utterance.restype = ctypes.c_uint32
+
+    lib.sound_ring0_admit_forest_batch.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_uint32),
+    ]
+    lib.sound_ring0_admit_forest_batch.restype = ctypes.c_uint32
+
+    lib.sound_ring0_admit_forest_batch_keyed.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+        ctypes.POINTER(ctypes.c_uint32),
+    ]
+    lib.sound_ring0_admit_forest_batch_keyed.restype = ctypes.c_uint32
+
+    lib.sound_ring0_searu_repair_weighted.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint64,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+    ]
+    lib.sound_ring0_searu_repair_weighted.restype = ctypes.c_uint32
+
+    lib.sound_ring0_chart_glue_import.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_uint64,
+        ctypes.c_void_p,
+    ]
+    lib.sound_ring0_chart_glue_import.restype = ctypes.c_uint32
+
+    lib.sound_ring0_chart_glue_import_keyed.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_uint64,
+        ctypes.c_void_p,
+        ctypes.c_uint64,
+        ctypes.c_uint64,
+    ]
+    lib.sound_ring0_chart_glue_import_keyed.restype = ctypes.c_uint32
+
+    lib.sound_ring0_chart_glue_verify.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+    ]
+    lib.sound_ring0_chart_glue_verify.restype = ctypes.c_uint32
+
+    lib.sound_ring0_lift_policy_eval_to_fir.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_char_p,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        ctypes.POINTER(ctypes.c_size_t),
+    ]
+    lib.sound_ring0_lift_policy_eval_to_fir.restype = ctypes.c_uint32
     return lib
 
 
@@ -603,8 +924,91 @@ def _use_ffi_backend(sound_bin: Path, backend: str) -> Optional[ctypes.CDLL]:
     return lib
 
 
-def verify_arena_bytes(
+def try_verify_arena_bytes(
     arena_bytes: bytes, sound_bin: Path, *, backend: str = "auto"
+) -> ArenaVerifyOutcome:
+    """Value-first HoTT verifier returning landing `SoundFiber` without throwing on fallbacks."""
+    if len(arena_bytes) != SOUND_ARENA_BYTES:
+        return ArenaVerifyOutcome(
+            fiber=SoundFiber.FALLBACK_BOUNDS,
+            eval_result=None,
+            forest_ctrl=None,
+        )
+
+    lib = _use_ffi_backend(sound_bin, backend)
+    if lib is not None:
+        ctrl_pre = read_forest_ctrl(arena_bytes)
+        buf = _AlignedArenaBuffer(arena_bytes)
+        rc_ver = int(lib.sound_ring0_arena_verify(buf.ptr))
+        if rc_ver != 0:
+            return ArenaVerifyOutcome(
+                fiber=SoundFiber(rc_ver),
+                eval_result=None,
+                forest_ctrl=ctrl_pre,
+            )
+        rc_ev = int(lib.sound_ring0_eval(buf.ptr))
+        cur = buf.read()
+        ctrl_post = read_forest_ctrl(cur)
+        if rc_ev != 0:
+            return ArenaVerifyOutcome(
+                fiber=SoundFiber(rc_ev),
+                eval_result=None,
+                forest_ctrl=ctrl_post,
+            )
+        try:
+            eval_res = _parse_eval_from_arena(cur)
+        except SoundVerifyError:
+            return ArenaVerifyOutcome(
+                fiber=SoundFiber.HOLD_INCOHERENT,
+                eval_result=None,
+                forest_ctrl=ctrl_post,
+            )
+        return ArenaVerifyOutcome(
+            fiber=SoundFiber.COMMITTED,
+            eval_result=eval_res,
+            forest_ctrl=ctrl_post,
+        )
+
+    try:
+        ev = verify_arena_bytes(arena_bytes, sound_bin, backend="cli")
+        return ArenaVerifyOutcome(
+            fiber=SoundFiber.COMMITTED,
+            eval_result=ev,
+            forest_ctrl=read_forest_ctrl(arena_bytes),
+        )
+    except SoundVerifyError as exc:
+        m = _CLI_FIBER_RE.search(str(exc))
+        fb = SoundFiber(int(m.group(1))) if m else SoundFiber.FALLBACK_FORMAT
+        return ArenaVerifyOutcome(
+            fiber=fb,
+            eval_result=None,
+            forest_ctrl=read_forest_ctrl(arena_bytes),
+        )
+
+
+def _verify_arena_buf_with_optional_key(
+    lib: ctypes.CDLL, buf: _AlignedArenaBuffer, key: Optional[Tuple[int, int]]
+) -> int:
+    """Verify 16KB arena structure + Merkle, honoring keyed SipHash policy if `key` is supplied."""
+    rc = int(lib.sound_ring0_arena_verify(buf.ptr))
+    if key is None:
+        return rc
+    if rc not in (0, SoundFiber.FALLBACK_POLICY_TAMPER.value):
+        return rc
+    k0, k1 = key
+    return int(
+        lib.sound_ring0_policy_verify_keyed(
+            buf.ptr, k0 & 0xFFFFFFFFFFFFFFFF, k1 & 0xFFFFFFFFFFFFFFFF
+        )
+    )
+
+
+def verify_arena_bytes(
+    arena_bytes: bytes,
+    sound_bin: Path,
+    *,
+    backend: str = "auto",
+    key: Optional[Tuple[int, int]] = None,
 ) -> ArenaEvalResult:
     """Verify & evaluate a 16,384B arena via in-memory `libsound` FFI or `build/sound` CLI."""
     if len(arena_bytes) != SOUND_ARENA_BYTES:
@@ -613,14 +1017,14 @@ def verify_arena_bytes(
     lib = _use_ffi_backend(sound_bin, backend)
     if lib is not None:
         buf = _AlignedArenaBuffer(arena_bytes)
-        rc = lib.sound_ring0_arena_verify(buf.ptr)
+        rc = _verify_arena_buf_with_optional_key(lib, buf, key)
         if rc != 0:
             raise SoundVerifyError(
-                f"SoundArena verify failed (err={rc} {SOUND_ERR_MAP.get(rc, '')})"
+                f"SoundArena verify failed (fiber={rc} {fiber_name(rc)})"
             )
-        rc = lib.sound_ring0_eval(buf.ptr)
+        rc = int(lib.sound_ring0_eval(buf.ptr))
         if rc != 0:
-            raise SoundVerifyError(f"sound_eval failed (err={rc} {SOUND_ERR_MAP.get(rc, '')})")
+            raise SoundVerifyError(f"sound_eval failed (fiber={rc} {fiber_name(rc)})")
         return _parse_eval_from_arena(buf.read())
 
     if not sound_bin.is_file():
@@ -695,14 +1099,14 @@ def repair_arena_bytes(
     lib = _use_ffi_backend(sound_bin, backend)
     if lib is not None:
         buf = _AlignedArenaBuffer(arena_bytes)
-        rc = lib.sound_ring0_arena_verify(buf.ptr)
+        rc = int(lib.sound_ring0_arena_verify(buf.ptr))
         if rc != 0:
             raise SoundVerifyError(
-                f"SoundArena verify failed (err={rc} {SOUND_ERR_MAP.get(rc, '')})"
+                f"SoundArena verify failed (fiber={rc} {fiber_name(rc)})"
             )
-        rc = lib.sound_ring0_searu_repair(buf.ptr, _parse_seed_u64(seed), 2048)
+        rc = int(lib.sound_ring0_searu_repair(buf.ptr, _parse_seed_u64(seed), 2048))
         if rc != 0:
-            raise SoundVerifyError(f"SEARU repair failed (err={rc} {SOUND_ERR_MAP.get(rc, '')})")
+            raise SoundVerifyError(f"SEARU repair failed (fiber={rc} {fiber_name(rc)})")
         return _parse_repair_from_arena(buf.read())
 
     if not sound_bin.is_file():
@@ -754,33 +1158,35 @@ def lift_fir_arena_bytes(
     lib = _use_ffi_backend(sound_bin, backend)
     if lib is not None:
         buf = _AlignedArenaBuffer(arena_bytes)
-        rc = lib.sound_ring0_arena_verify(buf.ptr)
+        rc = int(lib.sound_ring0_arena_verify(buf.ptr))
         if rc != 0:
             raise SoundVerifyError(
-                f"SoundArena verify failed (err={rc} {SOUND_ERR_MAP.get(rc, '')})"
+                f"SoundArena verify failed (fiber={rc} {fiber_name(rc)})"
             )
         if repaired:
-            rc = lib.sound_ring0_searu_repair(buf.ptr, _parse_seed_u64(seed), 2048)
+            rc = int(lib.sound_ring0_searu_repair(buf.ptr, _parse_seed_u64(seed), 2048))
         else:
-            rc = lib.sound_ring0_eval(buf.ptr)
+            rc = int(lib.sound_ring0_eval(buf.ptr))
         if rc != 0:
-            raise SoundVerifyError(f"Kernel eval failed (err={rc} {SOUND_ERR_MAP.get(rc, '')})")
+            raise SoundVerifyError(f"Kernel eval failed (fiber={rc} {fiber_name(rc)})")
 
         fir_out = ctypes.create_string_buffer(SOUND_FIR_BYTES)
         out_len = ctypes.c_size_t(0)
         eff_name = prog_name.encode("ascii", errors="strict")[:23]
         fir_flags = SOUND_FIR_FLAG_USE_REPAIRED if repaired else 0
-        rc = lib.sound_ring0_lift_to_fir(
-            buf.ptr,
-            eff_name,
-            fir_flags,
-            ctypes.cast(fir_out, ctypes.c_void_p),
-            SOUND_FIR_BYTES,
-            ctypes.byref(out_len),
+        rc = int(
+            lib.sound_ring0_lift_to_fir(
+                buf.ptr,
+                eff_name,
+                fir_flags,
+                ctypes.cast(fir_out, ctypes.c_void_p),
+                SOUND_FIR_BYTES,
+                ctypes.byref(out_len),
+            )
         )
         if rc != 0:
             raise SoundVerifyError(
-                f"sound_ring0_lift_to_fir failed (err={rc} {SOUND_ERR_MAP.get(rc, '')})"
+                f"sound_ring0_lift_to_fir failed (fiber={rc} {fiber_name(rc)})"
             )
         fir_bytes = bytes(fir_out[: out_len.value])
         if len(fir_bytes) != SOUND_FIR_BYTES or not fir_bytes.startswith(b"FIR1"):
@@ -849,24 +1255,24 @@ def apply_potestative_arena_bytes(
     revoke_pos: bool = False,
     grant_neg: bool = False,
     revoke_neg: bool = False,
-) -> Tuple[bytes, int, NormativeStateSnapshot]:
+) -> Tuple[bytes, SoundFiber, NormativeStateSnapshot]:
     """Execute C17 `sound_ring0_apply_potestative` + re-seal via in-memory `libsound` FFI."""
     lib = _use_ffi_backend(sound_bin, "ffi")
     assert lib is not None
     buf = _AlignedArenaBuffer(arena_bytes)
-    rc_ver = lib.sound_ring0_arena_verify(buf.ptr)
+    rc_ver = int(lib.sound_ring0_arena_verify(buf.ptr))
     if rc_ver != 0:
-        raise SoundVerifyError(
-            f"SoundArena verify failed (err={rc_ver} {SOUND_ERR_MAP.get(rc_ver, '')})"
-        )
-    rc = int(
-        lib.sound_ring0_apply_potestative(
-            buf.ptr,
-            slot,
-            bool(grant_pos),
-            bool(revoke_pos),
-            bool(grant_neg),
-            bool(revoke_neg),
+        return arena_bytes, SoundFiber(rc_ver), read_normative_state(arena_bytes)
+    rc = SoundFiber(
+        int(
+            lib.sound_ring0_apply_potestative(
+                buf.ptr,
+                slot,
+                bool(grant_pos),
+                bool(revoke_pos),
+                bool(grant_neg),
+                bool(revoke_neg),
+            )
         )
     )
     lib.sound_ring0_arena_seal(buf.ptr)
@@ -883,24 +1289,24 @@ def apply_declarative_arena_bytes(
     in_constitutive_context: bool,
     internal_will_matches: bool,
     utterance_hash: int,
-) -> Tuple[bytes, int, NormativeStateSnapshot]:
+) -> Tuple[bytes, SoundFiber, NormativeStateSnapshot]:
     """Execute C17 `sound_ring0_apply_declarative` + re-seal via in-memory `libsound` FFI."""
     lib = _use_ffi_backend(sound_bin, "ffi")
     assert lib is not None
     buf = _AlignedArenaBuffer(arena_bytes)
-    rc_ver = lib.sound_ring0_arena_verify(buf.ptr)
+    rc_ver = int(lib.sound_ring0_arena_verify(buf.ptr))
     if rc_ver != 0:
-        raise SoundVerifyError(
-            f"SoundArena verify failed (err={rc_ver} {SOUND_ERR_MAP.get(rc_ver, '')})"
-        )
-    rc = int(
-        lib.sound_ring0_apply_declarative(
-            buf.ptr,
-            intent_node,
-            duty_slot,
-            bool(in_constitutive_context),
-            bool(internal_will_matches),
-            utterance_hash & 0xFFFFFFFFFFFFFFFF,
+        return arena_bytes, SoundFiber(rc_ver), read_normative_state(arena_bytes)
+    rc = SoundFiber(
+        int(
+            lib.sound_ring0_apply_declarative(
+                buf.ptr,
+                intent_node,
+                duty_slot,
+                bool(in_constitutive_context),
+                bool(internal_will_matches),
+                utterance_hash & 0xFFFFFFFFFFFFFFFF,
+            )
         )
     )
     lib.sound_ring0_arena_seal(buf.ptr)
@@ -915,31 +1321,528 @@ def exercise_rescission_arena_bytes(
     target_intent_node: int,
     duty_slot: int,
     rescission_hash: int,
-) -> Tuple[bytes, int, ArenaEvalResult, NormativeStateSnapshot]:
+) -> Tuple[bytes, SoundFiber, Optional[ArenaEvalResult], NormativeStateSnapshot]:
     """Execute C17 `sound_ring0_exercise_rescission` + re-seal via in-memory `libsound` FFI."""
     lib = _use_ffi_backend(sound_bin, "ffi")
     assert lib is not None
     buf = _AlignedArenaBuffer(arena_bytes)
-    rc_ver = lib.sound_ring0_arena_verify(buf.ptr)
+    rc_ver = int(lib.sound_ring0_arena_verify(buf.ptr))
     if rc_ver != 0:
-        raise SoundVerifyError(
-            f"SoundArena verify failed (err={rc_ver} {SOUND_ERR_MAP.get(rc_ver, '')})"
-        )
-    rc = int(
-        lib.sound_ring0_exercise_rescission(
-            buf.ptr,
-            target_intent_node,
-            duty_slot,
-            rescission_hash & 0xFFFFFFFFFFFFFFFF,
+        return arena_bytes, SoundFiber(rc_ver), None, read_normative_state(arena_bytes)
+    rc = SoundFiber(
+        int(
+            lib.sound_ring0_exercise_rescission(
+                buf.ptr,
+                target_intent_node,
+                duty_slot,
+                rescission_hash & 0xFFFFFFFFFFFFFFFF,
+            )
         )
     )
-    if rc == 0:
+    eval_res: Optional[ArenaEvalResult]
+    if rc == SoundFiber.COMMITTED:
         eval_res = _parse_eval_from_arena(buf.read())
     else:
-        rc_ev = lib.sound_ring0_eval(buf.ptr)
-        if rc_ev != 0:
-            raise SoundVerifyError(f"sound_eval failed (err={rc_ev})")
-        eval_res = _parse_eval_from_arena(buf.read())
+        rc_ev = int(lib.sound_ring0_eval(buf.ptr))
+        eval_res = _parse_eval_from_arena(buf.read()) if rc_ev == 0 else None
     lib.sound_ring0_arena_seal(buf.ptr)
     sealed = buf.read()
     return sealed, rc, eval_res, read_normative_state(sealed)
+
+
+def policy_seal_bytes(
+    arena_bytes: bytes,
+    sound_bin: Path,
+    *,
+    policy_mask: int,
+    bind_mask: int,
+    ctrl_flags: int = 0,
+) -> Tuple[bytes, SoundFiber, ForestCtrlSnapshot]:
+    """Seal Zero-Trust Prepared-Statement policy/bind planes via `sound_ring0_policy_seal`."""
+    if len(arena_bytes) != SOUND_ARENA_BYTES:
+        raise ValueError(f"Expected {SOUND_ARENA_BYTES}B SoundArena, got {len(arena_bytes)}B")
+    lib = _use_ffi_backend(sound_bin, "ffi")
+    assert lib is not None
+    buf = _AlignedArenaBuffer(arena_bytes)
+    rc_ver = int(lib.sound_ring0_arena_verify(buf.ptr))
+    if rc_ver != 0:
+        return arena_bytes, SoundFiber(rc_ver), read_forest_ctrl(arena_bytes)
+    rc = SoundFiber(
+        int(
+            lib.sound_ring0_policy_seal(
+                buf.ptr,
+                policy_mask & 0xFFFFFFFFFFFFFFFF,
+                bind_mask & 0xFFFFFFFFFFFFFFFF,
+                ctrl_flags & 0xFFFFFFFF,
+            )
+        )
+    )
+    lib.sound_ring0_arena_seal(buf.ptr)
+    sealed = buf.read()
+    return sealed, rc, read_forest_ctrl(sealed)
+
+
+def policy_verify_bytes(arena_bytes: bytes, sound_bin: Path) -> SoundFiber:
+    """Verify Prepared-Statement policy digest directly via `sound_ring0_policy_verify`."""
+    if len(arena_bytes) != SOUND_ARENA_BYTES:
+        return SoundFiber.FALLBACK_BOUNDS
+    lib = _use_ffi_backend(sound_bin, "ffi")
+    assert lib is not None
+    buf = _AlignedArenaBuffer(arena_bytes)
+    return SoundFiber(int(lib.sound_ring0_policy_verify(buf.ptr)))
+
+
+def admit_candidate_bytes(
+    arena_bytes: bytes,
+    sound_bin: Path,
+    *,
+    target_node: int,
+    force: str = "assertion",
+    sort: str = "factual",
+    evid: str = "sensory",
+    aspect: str = "state",
+    span_start: int = 0,
+    span_end: int = 16,
+    utterance_bytes: int = 32,
+    node_flags: int = 0,
+    presup_mask: int = 0,
+    premise_mask: int = 0,
+    attack_mask: int = 0,
+    payload_hash: int = 0,
+) -> Tuple[bytes, SoundFiber, int, ForestCtrlSnapshot]:
+    """Write `SoundCandidate64` + Layer-0 utterance header and invoke `sound_ring0_admit_forest`."""
+    if len(arena_bytes) != SOUND_ARENA_BYTES:
+        raise ValueError(f"Expected {SOUND_ARENA_BYTES}B SoundArena, got {len(arena_bytes)}B")
+    if force not in FORCE_MAP:
+        raise ValueError(f"Invalid force: {force!r}")
+    if sort not in SORT_MAP:
+        raise ValueError(f"Invalid sort: {sort!r}")
+    if evid not in EVID_MAP:
+        raise ValueError(f"Invalid evid: {evid!r}")
+    if aspect not in ASPECT_MAP:
+        raise ValueError(f"Invalid aspect: {aspect!r}")
+
+    raw = bytearray(arena_bytes)
+    struct.pack_into(
+        "<IBBBBIIIIQQQQQ",
+        raw,
+        200 * 64,
+        target_node & 0xFFFFFFFF,
+        FORCE_MAP[force],
+        SORT_MAP[sort],
+        EVID_MAP[evid],
+        ASPECT_MAP[aspect],
+        span_start & 0xFFFFFFFF,
+        span_end & 0xFFFFFFFF,
+        node_flags & 0xFFFFFFFF,
+        0,
+        presup_mask & 0xFFFFFFFFFFFFFFFF,
+        premise_mask & 0xFFFFFFFFFFFFFFFF,
+        attack_mask & 0xFFFFFFFFFFFFFFFF,
+        payload_hash & 0xFFFFFFFFFFFFFFFF,
+        0,
+    )
+    struct.pack_into(
+        "<4I",
+        raw,
+        216 * 64,
+        utterance_bytes & 0xFFFFFFFF,
+        0,
+        0,
+        1,
+    )
+
+    lib = _use_ffi_backend(sound_bin, "ffi")
+    assert lib is not None
+    buf = _AlignedArenaBuffer(bytes(raw))
+    admitted = ctypes.c_uint32(0xFFFFFFFF)
+    verdict = SoundFiber(int(lib.sound_ring0_admit_forest(buf.ptr, ctypes.byref(admitted))))
+    lib.sound_ring0_arena_seal(buf.ptr)
+    sealed = buf.read()
+    return sealed, verdict, int(admitted.value), read_forest_ctrl(sealed)
+
+
+def _c_bytes_arg(data: Optional[bytes]) -> Tuple[Optional[ctypes.Array[ctypes.c_char]], ctypes.c_void_p, int]:
+    """Create a ctypes buffer for arbitrary binary bytes (safe for empty bytes and NUL bytes)."""
+    if data is None:
+        return None, ctypes.c_void_p(0), 0
+    if len(data) == 0:
+        arr = ctypes.create_string_buffer(1)
+        return arr, ctypes.cast(arr, ctypes.c_void_p), 0
+    arr = ctypes.create_string_buffer(data, len(data))
+    return arr, ctypes.cast(arr, ctypes.c_void_p), len(data)
+
+
+def _pack_candidate(
+    raw: bytearray,
+    slot_idx: int,
+    cand: CandidateSpec,
+    utterance: Optional[bytes] = None,
+) -> None:
+    if not (0 <= slot_idx < SOUND_MAX_CANDIDATES):
+        raise ValueError(f"Candidate slot index out of range 0..15: {slot_idx}")
+    if cand.force not in FORCE_MAP:
+        raise ValueError(f"Invalid force: {cand.force!r}")
+    if cand.sort not in SORT_MAP:
+        raise ValueError(f"Invalid sort: {cand.sort!r}")
+    if cand.evid not in EVID_MAP:
+        raise ValueError(f"Invalid evid: {cand.evid!r}")
+    if cand.aspect not in ASPECT_MAP:
+        raise ValueError(f"Invalid aspect: {cand.aspect!r}")
+
+    if cand.payload_hash is not None:
+        phash = cand.payload_hash & 0xFFFFFFFFFFFFFFFF
+    elif utterance is not None and 0 <= cand.span_start < cand.span_end <= len(utterance):
+        phash = fnv1a_64(utterance[cand.span_start : cand.span_end])
+    else:
+        phash = 0
+
+    struct.pack_into(
+        "<IBBBBIIIIQQQQQ",
+        raw,
+        (200 + slot_idx) * 64,
+        cand.target_node & 0xFFFFFFFF,
+        FORCE_MAP[cand.force],
+        SORT_MAP[cand.sort],
+        EVID_MAP[cand.evid],
+        ASPECT_MAP[cand.aspect],
+        cand.span_start & 0xFFFFFFFF,
+        cand.span_end & 0xFFFFFFFF,
+        cand.node_flags & 0xFFFFFFFF,
+        0,
+        cand.presup_mask & 0xFFFFFFFFFFFFFFFF,
+        cand.premise_mask & 0xFFFFFFFFFFFFFFFF,
+        cand.attack_mask & 0xFFFFFFFFFFFFFFFF,
+        phash,
+        0,
+    )
+
+
+def siphash24_bytes(k0: int, k1: int, data: bytes, sound_bin: Path) -> int:
+    """Compute Ring-0 Pure-GPR SipHash-2-4 tag via `sound_ring0_siphash24`."""
+    lib = _use_ffi_backend(sound_bin, "ffi")
+    assert lib is not None
+    _keepalive, ptr, n = _c_bytes_arg(data)
+    return int(
+        lib.sound_ring0_siphash24(
+            k0 & 0xFFFFFFFFFFFFFFFF,
+            k1 & 0xFFFFFFFFFFFFFFFF,
+            ptr,
+            n,
+        )
+    )
+
+
+def policy_seal_keyed_bytes(
+    arena_bytes: bytes,
+    sound_bin: Path,
+    *,
+    policy_mask: int,
+    bind_mask: int,
+    k0: int,
+    k1: int,
+    ctrl_flags: int = 0,
+) -> Tuple[bytes, SoundFiber, ForestCtrlSnapshot]:
+    """Seal Zero-Trust Prepared-Statement policy/bind planes with keyed SipHash-2-4 HMAC."""
+    if len(arena_bytes) != SOUND_ARENA_BYTES:
+        raise ValueError(f"Expected {SOUND_ARENA_BYTES}B SoundArena, got {len(arena_bytes)}B")
+    lib = _use_ffi_backend(sound_bin, "ffi")
+    assert lib is not None
+    buf = _AlignedArenaBuffer(arena_bytes)
+    rc_ver = int(lib.sound_ring0_arena_verify(buf.ptr))
+    if rc_ver not in (0, SoundFiber.FALLBACK_POLICY_TAMPER.value):
+        return arena_bytes, SoundFiber(rc_ver), read_forest_ctrl(arena_bytes)
+    rc = SoundFiber(
+        int(
+            lib.sound_ring0_policy_seal_keyed(
+                buf.ptr,
+                policy_mask & 0xFFFFFFFFFFFFFFFF,
+                bind_mask & 0xFFFFFFFFFFFFFFFF,
+                ctrl_flags & 0xFFFFFFFF,
+                k0 & 0xFFFFFFFFFFFFFFFF,
+                k1 & 0xFFFFFFFFFFFFFFFF,
+            )
+        )
+    )
+    lib.sound_ring0_arena_seal(buf.ptr)
+    sealed = buf.read()
+    return sealed, rc, read_forest_ctrl(sealed)
+
+
+def policy_verify_keyed_bytes(
+    arena_bytes: bytes, sound_bin: Path, *, k0: int, k1: int
+) -> SoundFiber:
+    """Verify keyed SipHash-2-4 Prepared-Statement policy MAC via `sound_ring0_policy_verify_keyed`."""
+    if len(arena_bytes) != SOUND_ARENA_BYTES:
+        return SoundFiber.FALLBACK_BOUNDS
+    lib = _use_ffi_backend(sound_bin, "ffi")
+    assert lib is not None
+    buf = _AlignedArenaBuffer(arena_bytes)
+    return SoundFiber(
+        int(
+            lib.sound_ring0_policy_verify_keyed(
+                buf.ptr,
+                k0 & 0xFFFFFFFFFFFFFFFF,
+                k1 & 0xFFFFFFFFFFFFFFFF,
+            )
+        )
+    )
+
+
+def admit_candidate_with_utterance_bytes(
+    arena_bytes: bytes,
+    sound_bin: Path,
+    *,
+    candidate: CandidateSpec,
+    utterance: bytes,
+) -> Tuple[bytes, SoundFiber, int, ForestCtrlSnapshot]:
+    """Admit a single candidate with Ring-0 utterance slice FNV-1a span-hash verification."""
+    if len(arena_bytes) != SOUND_ARENA_BYTES:
+        raise ValueError(f"Expected {SOUND_ARENA_BYTES}B SoundArena, got {len(arena_bytes)}B")
+    raw = bytearray(arena_bytes)
+    _pack_candidate(raw, 0, candidate, utterance)
+    struct.pack_into("<4I", raw, 216 * 64, len(utterance) & 0xFFFFFFFF, 0, 0, 1)
+
+    lib = _use_ffi_backend(sound_bin, "ffi")
+    assert lib is not None
+    buf = _AlignedArenaBuffer(bytes(raw))
+    _keepalive, utt_ptr, utt_len = _c_bytes_arg(utterance)
+    admitted = ctypes.c_uint32(0xFFFFFFFF)
+    verdict = SoundFiber(
+        int(
+            lib.sound_ring0_admit_forest_with_utterance(
+                buf.ptr, utt_ptr, utt_len, ctypes.byref(admitted)
+            )
+        )
+    )
+    lib.sound_ring0_arena_seal(buf.ptr)
+    sealed = buf.read()
+    return sealed, verdict, int(admitted.value), read_forest_ctrl(sealed)
+
+
+def admit_batch_bytes(
+    arena_bytes: bytes,
+    sound_bin: Path,
+    *,
+    candidates: Sequence[CandidateSpec],
+    utterance: Optional[bytes] = None,
+    key: Optional[Tuple[int, int]] = None,
+) -> Tuple[bytes, SoundFiber, int, ForestCtrlSnapshot]:
+    """Run 2-phase atomic multi-slot admission across `1..16` candidates via Ring-0 FFI."""
+    if len(arena_bytes) != SOUND_ARENA_BYTES:
+        raise ValueError(f"Expected {SOUND_ARENA_BYTES}B SoundArena, got {len(arena_bytes)}B")
+    if len(candidates) > SOUND_MAX_CANDIDATES:
+        raise ValueError(
+            f"Batch allows at most {SOUND_MAX_CANDIDATES} candidates, got {len(candidates)}"
+        )
+
+    raw = bytearray(arena_bytes)
+    raw[200 * 64 : 216 * 64] = b"\x00" * (SOUND_MAX_CANDIDATES * 64)
+    for idx, cand in enumerate(candidates):
+        _pack_candidate(raw, idx, cand, utterance)
+
+    utt_bytes = (
+        len(utterance)
+        if utterance is not None
+        else max((cand.span_end for cand in candidates), default=0)
+    )
+    struct.pack_into(
+        "<4I",
+        raw,
+        216 * 64,
+        utt_bytes & 0xFFFFFFFF,
+        0,
+        0,
+        len(candidates) & 0xFFFFFFFF,
+    )
+
+    lib = _use_ffi_backend(sound_bin, "ffi")
+    assert lib is not None
+    buf = _AlignedArenaBuffer(bytes(raw))
+    _keepalive, utt_ptr, utt_len = _c_bytes_arg(utterance)
+    out_count = ctypes.c_uint32(0)
+    if key is not None:
+        k0, k1 = key
+        verdict = SoundFiber(
+            int(
+                lib.sound_ring0_admit_forest_batch_keyed(
+                    buf.ptr,
+                    utt_ptr,
+                    utt_len,
+                    k0 & 0xFFFFFFFFFFFFFFFF,
+                    k1 & 0xFFFFFFFFFFFFFFFF,
+                    ctypes.byref(out_count),
+                )
+            )
+        )
+    else:
+        verdict = SoundFiber(
+            int(
+                lib.sound_ring0_admit_forest_batch(
+                    buf.ptr, utt_ptr, utt_len, ctypes.byref(out_count)
+                )
+            )
+        )
+    lib.sound_ring0_arena_seal(buf.ptr)
+    sealed = buf.read()
+    return sealed, verdict, int(out_count.value), read_forest_ctrl(sealed)
+
+
+def repair_weighted_arena_bytes(
+    arena_bytes: bytes,
+    sound_bin: Path,
+    *,
+    priority_weights: Sequence[int],
+    seed: Optional[str] = None,
+    key: Optional[Tuple[int, int]] = None,
+) -> Tuple[bytes, SoundFiber, ArenaRepairResult]:
+    """Run Lex Specialis priority-weighted SEARU conflict repair via Ring-0 FFI."""
+    if len(arena_bytes) != SOUND_ARENA_BYTES:
+        raise ValueError(f"Expected {SOUND_ARENA_BYTES}B SoundArena, got {len(arena_bytes)}B")
+    if len(priority_weights) > SOUND_MAX_NODES:
+        raise ValueError(
+            f"Expected at most {SOUND_MAX_NODES} weights, got {len(priority_weights)}"
+        )
+
+    padded = [0] * SOUND_MAX_NODES
+    for i, w in enumerate(priority_weights):
+        wi = int(w)
+        if not (0 <= wi <= 255):
+            raise ValueError(f"Priority weight[{i}] out of uint8 range 0..255: {wi}")
+        padded[i] = wi
+    w_arr = (ctypes.c_uint8 * SOUND_MAX_NODES)(*padded)
+
+    lib = _use_ffi_backend(sound_bin, "ffi")
+    assert lib is not None
+    buf = _AlignedArenaBuffer(arena_bytes)
+    rc_ver = _verify_arena_buf_with_optional_key(lib, buf, key)
+    if rc_ver != 0:
+        raise SoundVerifyError(
+            f"SoundArena verify failed (fiber={rc_ver} {fiber_name(rc_ver)})"
+        )
+    rc = SoundFiber(
+        int(
+            lib.sound_ring0_searu_repair_weighted(
+                buf.ptr,
+                _parse_seed_u64(seed),
+                2048,
+                ctypes.cast(w_arr, ctypes.c_void_p),
+            )
+        )
+    )
+    lib.sound_ring0_arena_seal(buf.ptr)
+    sealed = buf.read()
+    return sealed, rc, _parse_repair_from_arena(sealed)
+
+
+def chart_glue_import_bytes(
+    dst_arena_bytes: bytes,
+    src_arena_bytes: bytes,
+    sound_bin: Path,
+    *,
+    src_export_mask: int,
+    slot_map: Dict[int, int],
+    key: Optional[Tuple[int, int]] = None,
+) -> Tuple[bytes, SoundFiber, ChartGlueSnapshot]:
+    """Glue established source chart ports into destination factual bind slots via Ring-0 FFI."""
+    if len(dst_arena_bytes) != SOUND_ARENA_BYTES or len(src_arena_bytes) != SOUND_ARENA_BYTES:
+        raise ValueError(f"Expected {SOUND_ARENA_BYTES}B SoundArena inputs")
+    c_map = [0] * SOUND_MAX_NODES
+    for s_idx, d_idx in slot_map.items():
+        if not (0 <= s_idx < SOUND_MAX_NODES and 0 <= d_idx < SOUND_MAX_NODES):
+            raise ValueError(f"Slot map indices must be in 0..63, got {s_idx} -> {d_idx}")
+        c_map[s_idx] = d_idx
+    map_arr = (ctypes.c_uint8 * SOUND_MAX_NODES)(*c_map)
+
+    lib = _use_ffi_backend(sound_bin, "ffi")
+    assert lib is not None
+    dst_buf = _AlignedArenaBuffer(dst_arena_bytes)
+    src_buf = _AlignedArenaBuffer(src_arena_bytes)
+    if key is not None:
+        k0, k1 = key
+        rc = SoundFiber(
+            int(
+                lib.sound_ring0_chart_glue_import_keyed(
+                    dst_buf.ptr,
+                    src_buf.ptr,
+                    src_export_mask & 0xFFFFFFFFFFFFFFFF,
+                    ctypes.cast(map_arr, ctypes.c_void_p),
+                    k0 & 0xFFFFFFFFFFFFFFFF,
+                    k1 & 0xFFFFFFFFFFFFFFFF,
+                )
+            )
+        )
+    else:
+        rc = SoundFiber(
+            int(
+                lib.sound_ring0_chart_glue_import(
+                    dst_buf.ptr,
+                    src_buf.ptr,
+                    src_export_mask & 0xFFFFFFFFFFFFFFFF,
+                    ctypes.cast(map_arr, ctypes.c_void_p),
+                )
+            )
+        )
+    lib.sound_ring0_arena_seal(dst_buf.ptr)
+    sealed = dst_buf.read()
+    return sealed, rc, read_chart_glue(sealed)
+
+
+def chart_glue_verify_bytes(
+    dst_arena_bytes: bytes, src_arena_bytes: bytes, sound_bin: Path
+) -> SoundFiber:
+    """Verify destination chart glue certificate against source chart via Ring-0 FFI."""
+    if len(dst_arena_bytes) != SOUND_ARENA_BYTES or len(src_arena_bytes) != SOUND_ARENA_BYTES:
+        return SoundFiber.FALLBACK_BOUNDS
+    lib = _use_ffi_backend(sound_bin, "ffi")
+    assert lib is not None
+    dst_buf = _AlignedArenaBuffer(dst_arena_bytes)
+    src_buf = _AlignedArenaBuffer(src_arena_bytes)
+    return SoundFiber(int(lib.sound_ring0_chart_glue_verify(dst_buf.ptr, src_buf.ptr)))
+
+
+def lift_policy_eval_fir_bytes(
+    arena_bytes: bytes,
+    sound_bin: Path,
+    *,
+    prog_name: str = "sound_policy_eval",
+    unroll_alt_steps: int = 0,
+    key: Optional[Tuple[int, int]] = None,
+) -> bytes:
+    """Compile a sealed SoundArena policy directly into a FLOW_IR linear `.fir` circuit."""
+    if len(arena_bytes) != SOUND_ARENA_BYTES:
+        raise ValueError(f"Expected {SOUND_ARENA_BYTES}B SoundArena, got {len(arena_bytes)}B")
+    if not prog_name or "/" in prog_name or "\\" in prog_name:
+        raise ValueError(f"Invalid FIR program basename: {prog_name!r}")
+
+    lib = _use_ffi_backend(sound_bin, "ffi")
+    assert lib is not None
+    buf = _AlignedArenaBuffer(arena_bytes)
+    rc_ver = _verify_arena_buf_with_optional_key(lib, buf, key)
+    if rc_ver != 0:
+        raise SoundVerifyError(
+            f"SoundArena verify failed (fiber={rc_ver} {fiber_name(rc_ver)})"
+        )
+
+    out_cap = 65536
+    fir_out = ctypes.create_string_buffer(out_cap)
+    out_len = ctypes.c_size_t(0)
+    eff_name = prog_name.encode("ascii", errors="strict")[:23]
+    rc = int(
+        lib.sound_ring0_lift_policy_eval_to_fir(
+            buf.ptr,
+            eff_name,
+            unroll_alt_steps & 0xFFFFFFFF,
+            ctypes.cast(fir_out, ctypes.c_void_p),
+            out_cap,
+            ctypes.byref(out_len),
+        )
+    )
+    if rc != 0:
+        raise SoundVerifyError(
+            f"sound_ring0_lift_policy_eval_to_fir failed (fiber={rc} {fiber_name(rc)})"
+        )
+    fir_bytes = bytes(fir_out[: out_len.value])
+    if len(fir_bytes) < 64 or not fir_bytes.startswith(b"FIR1"):
+        raise SoundVerifyError("Malformed policy-eval FIR1 output")
+    return fir_bytes

@@ -32,7 +32,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from modules.common.arena_codec import (
     ArenaNodeSpec,
-    SOUND_ERR_MAP,
+    SOUND_FIBER_MAP,
     apply_potestative_arena_bytes,
     load_schema_hash,
     verify_arena_bytes,
@@ -882,7 +882,7 @@ def _eval_track2_proposer_sound(
         return False, target_node.status
     _, rc, _ = apply_potestative_arena_bytes(res.arena_bytes, sound_bin, slot=2, grant_pos=True)
     if rc != 0:
-        return False, SOUND_ERR_MAP.get(rc, f"rc={rc}")
+        return False, SOUND_FIBER_MAP.get(int(rc), f"rc={rc}")
     return True, "established"
 
 

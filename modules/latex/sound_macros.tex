@@ -1,0 +1,83 @@
+% ============================================================================
+% sound_macros.tex — Semantic LaTeX x SOUND Epistemic & Normative Comprehension
+% ============================================================================
+% Works cleanly inside standard pdflatex / xelatex / lualatex (\usepackage or \input)
+% AND acts as the deterministic grammar parsed by modules/latex/latex_compiler.py
+% into sealed 16,384B Ring-0 Prepared-Statement SoundArena images.
+% ============================================================================
+
+\RequirePackage{amsmath}
+\RequirePackage{amssymb}
+\RequirePackage{amsthm}
+
+% Document-level SOUND manifest (rendered as an abstract note in PDF)
+\newcommand{\soundpackid}{unnamed_pack}
+\newcommand{\sounddomain}{general}
+\newcommand{\soundjurisdiction}{INTL}
+\newcommand{\soundstandard}{SOUND LaTeX Spec}
+
+\newcommand{\sounddoc}[4]{%
+  \renewcommand{\soundpackid}{#1}%
+  \renewcommand{\sounddomain}{#2}%
+  \renewcommand{\soundjurisdiction}{#3}%
+  \renewcommand{\soundstandard}{#4}%
+  \begin{center}
+  \small\ttfamily [SOUND Pack: \detokenize{#1} \textbar{} Domain: \detokenize{#2} \textbar{} Jur: \detokenize{#3}]\\
+  \normalfont\small\textit{#4}
+  \end{center}\par\medskip
+}
+
+\newcommand{\soundnodirectclaim}{\par\noindent\scriptsize\ttfamily [SOUND Policy Flag: NO\_DIRECT\_CLAIM]\normalfont\par}
+
+% Semantic dependency & attack annotations (visualized softly in PDF, compiled to BitVec 64 masks)
+\newcommand{\soundmeta}[2]{\par\noindent{\scriptsize\ttfamily\textbf{#1}: \detokenize{#2}}\par}
+\newcommand{\soundclause}[1]{\soundmeta{Clause}{#1}}
+\newcommand{\soundpresup}[1]{\soundmeta{Presupposes}{#1}}
+\newcommand{\soundattacks}[1]{\soundmeta{Attacks}{#1}}
+\newcommand{\soundattackedby}[1]{\soundmeta{AttackedBy}{#1}}
+\newcommand{\soundaliases}[1]{\soundmeta{Aliases}{#1}}
+\newcommand{\soundkanlock}{\par\noindent{\scriptsize\ttfamily [KanLock / Immunity]}\par}
+\newcommand{\soundconstitutive}{\par\noindent{\scriptsize\ttfamily [Constitutive Slot]}\par}
+\newcommand{\soundrevoked}{\par\noindent{\scriptsize\ttfamily [Revoked]}\par}
+\newcommand{\soundcounterexamplefor}[2]{\soundmeta{CounterexampleFor(#1)}{#2}}
+\newcommand{\soundconfusable}[2]{\soundmeta{ConfusablePair}{#1 <-> #2}}
+
+% Theorem / Statutory environments: \begin{sound<kind>}[id=<node_id>]{<Title>} ... \end{sound<kind>}
+\newcommand{\soundenvhead}[3]{%
+  \par\medskip\noindent\textbf{#1}%
+  \if\relax\detokenize{#3}\relax\else\ \textbf{(#3)}\fi
+  \if\relax\detokenize{#2}\relax\else\ {\scriptsize\ttfamily [#2]}\fi
+  \par\smallskip\noindent\ignorespaces
+}
+\newcommand{\soundenvtail}{\par\medskip}
+
+% Mathematical environments
+\newenvironment{soundaxiom}[2][]{\soundenvhead{Axiom}{#1}{#2}}{\soundenvtail}
+\newenvironment{sounddef}[2][]{\soundenvhead{Definition}{#1}{#2}}{\soundenvtail}
+\newenvironment{soundhyp}[2][]{\soundenvhead{Hypothesis Slot}{#1}{#2}}{\soundenvtail}
+\newenvironment{soundlemma}[2][]{\soundenvhead{Lemma}{#1}{#2}}{\soundenvtail}
+\newenvironment{soundtheorem}[2][]{\soundenvhead{Theorem}{#1}{#2}}{\soundenvtail}
+\newenvironment{soundcorollary}[2][]{\soundenvhead{Corollary}{#1}{#2}}{\soundenvtail}
+\newenvironment{soundcounterexample}[2][]{\soundenvhead{Counterexample}{#1}{#2}}{\soundenvtail}
+\newenvironment{soundpenumbra}[2][]{\soundenvhead{Penumbra / Open Question}{#1}{#2}}{\soundenvtail}
+
+% Legal / Statutory environments
+\newenvironment{soundstatute}[2][]{\soundenvhead{Statute Root}{#1}{#2}}{\soundenvtail}
+\newenvironment{soundarticle}[2][]{\soundenvhead{Article}{#1}{#2}}{\soundenvtail}
+\newenvironment{soundfact}[2][]{\soundenvhead{Case Fact Slot}{#1}{#2}}{\soundenvtail}
+\newenvironment{soundrule}[2][]{\soundenvhead{Legal Rule}{#1}{#2}}{\soundenvtail}
+\newenvironment{soundproviso}[2][]{\soundenvhead{Proviso / Exception}{#1}{#2}}{\soundenvtail}
+\newenvironment{soundeffect}[2][]{\soundenvhead{Legal Effect}{#1}{#2}}{\soundenvtail}
+
+% Embedded Q&A Comprehension Probe environment: \begin{soundqa}[id=...,kind=...]{<Title>}
+\newenvironment{soundqa}[2][]{\soundenvhead{SOUND Comprehension Probe}{#1}{#2}}{\soundenvtail}
+\newcommand{\qaprompt}[1]{\par\noindent\textit{Prompt:} #1\par}
+\newcommand{\qabind}[1]{\soundmeta{Q\&A Bind}{#1}}
+\newcommand{\qatarget}[1]{\soundmeta{Q\&A Target}{#1}}
+\newcommand{\qaexpect}[1]{\soundmeta{Expected Status}{#1}}
+\newcommand{\qaexpectreason}[1]{\soundmeta{Expected Reason}{#1}}
+\newcommand{\qaexpectfiber}[1]{\soundmeta{Expected Fiber}{#1}}
+\newcommand{\qatampertarget}[1]{\soundmeta{Tamper Target}{#1}}
+\newcommand{\qatamperevid}[1]{\soundmeta{Tamper Evid}{#1}}
+\newcommand{\qaforce}[1]{\soundmeta{Utterance Force}{#1}}
+\newcommand{\qahint}[1]{\par\noindent\textit{Hint:} #1\par}

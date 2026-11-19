@@ -7,15 +7,24 @@ import unittest
 from pathlib import Path
 
 from modules.common.arena_codec import (
+    NODE_FLAG_CONSTITUTIVE,
     SOUND_ARENA_BYTES,
     SOUND_FIR_BYTES,
+    SOUND_FOREST_CTRL_NO_DIRECT_CLAIM,
+    SOUND_INJECT_REASON_FLAGS,
     ArenaNodeSpec,
+    SoundFiber,
     SoundVerifyError,
+    admit_candidate_bytes,
+    decode_inject_reasons,
     encode_arena,
     lift_fir_arena_bytes,
     load_libsound,
     load_schema_hash,
+    policy_seal_bytes,
+    policy_verify_bytes,
     repair_arena_bytes,
+    try_verify_arena_bytes,
     verify_arena_bytes,
 )
 from modules.common.mcq_engine import (
@@ -86,9 +95,12 @@ class SoundModulesTest(unittest.TestCase):
         self.assertEqual(res.nodes[4].status, "penumbraOpen")
         self.assertEqual(res.nodes[4].reasons, 0x01)
 
-        # Flip 1 byte in cell 1 (covered by FNV-1a Merkle root) -> must reject with MAC error
+        # Flip 1 byte in cell 1 (covered by FNV-1a Merkle root) -> fallback MAC fiber
         tampered = bytearray(arena)
         tampered[64] ^= 0x01
+        outcome = try_verify_arena_bytes(bytes(tampered), SOUND_BIN)
+        self.assertFalse(outcome.committed)
+        self.assertEqual(outcome.fiber, SoundFiber.FALLBACK_MAC)
         with self.assertRaises(SoundVerifyError):
             verify_arena_bytes(bytes(tampered), SOUND_BIN)
 
@@ -311,6 +323,169 @@ class SoundModulesTest(unittest.TestCase):
         )
         self.assertEqual(rfir_ffi.fir_bytes, rfir_cli.fir_bytes)
         self.assertEqual(rfir_ffi.active_mask, rfir_cli.active_mask)
+
+    def test_prepared_statement_policy_isolation_ffi(self) -> None:
+        self.assertEqual(len(SOUND_INJECT_REASON_FLAGS), 11)
+        nodes = [
+            ArenaNodeSpec(
+                label="rule_node",
+                sort="institutional",
+                evid="enacted_norm",
+                constitutive=True,
+                clauses=[1 << 1],
+            ),
+            ArenaNodeSpec(
+                label="bind_leaf",
+                sort="factual",
+                evid="assumed",
+                clauses=[0],
+            ),
+            ArenaNodeSpec(
+                label="imm_node",
+                sort="factual",
+                evid="direct",
+                clauses=[0],
+            ),
+            ArenaNodeSpec(
+                label="unbound_leaf",
+                sort="factual",
+                evid="assumed",
+                clauses=[0],
+            ),
+        ]
+        raw_arena = encode_arena(
+            nodes,
+            schema_hash=self.schema_hash,
+            immunity_mask=(1 << 2),
+        )
+
+        # Misconfigured seal retracts cleanly (total HoTT fallback fiber)
+        _, rc_overlap, _ = policy_seal_bytes(
+            raw_arena, SOUND_BIN, policy_mask=0x3, bind_mask=0x2
+        )
+        self.assertEqual(rc_overlap, SoundFiber.HOLD_INCOHERENT)
+        _, rc_imm, _ = policy_seal_bytes(
+            raw_arena, SOUND_BIN, policy_mask=0x1, bind_mask=0x4
+        )
+        self.assertEqual(rc_imm, SoundFiber.HOLD_IMMUNITY)
+
+        # Valid Prepared-Statement policy seal
+        sealed, rc_ok, ctrl = policy_seal_bytes(
+            raw_arena,
+            SOUND_BIN,
+            policy_mask=0x1,
+            bind_mask=0x2,
+            ctrl_flags=SOUND_FOREST_CTRL_NO_DIRECT_CLAIM,
+        )
+        self.assertEqual(rc_ok, SoundFiber.COMMITTED)
+        self.assertEqual(ctrl.last_fiber, int(SoundFiber.COMMITTED))
+        ep_seal = ctrl.fiber_epoch
+        self.assertGreaterEqual(ep_seal, 1)
+        self.assertNotEqual(ctrl.policy_hash, 0)
+        self.assertEqual(policy_verify_bytes(sealed, SOUND_BIN), SoundFiber.COMMITTED)
+
+        # Injection block 1: immunity slot (node 2)
+        sealed_imm, v_imm, adm_imm, c_imm = admit_candidate_bytes(
+            sealed, SOUND_BIN, target_node=2, evid="sensory"
+        )
+        self.assertEqual(v_imm, SoundFiber.FALLBACK_POLICY_VIOLATION)
+        self.assertEqual(c_imm.last_fiber, int(SoundFiber.FALLBACK_POLICY_VIOLATION))
+        self.assertGreater(c_imm.fiber_epoch, ep_seal)
+        self.assertEqual(adm_imm, 0xFFFFFFFF)
+        self.assertIn("IMMUNITY_SLOT", decode_inject_reasons(c_imm.last_reject_reason))
+
+        # Injection block 2: policy slot (node 0)
+        _, v_pol, adm_pol, c_pol = admit_candidate_bytes(
+            sealed_imm, SOUND_BIN, target_node=0, evid="sensory"
+        )
+        self.assertEqual(v_pol, SoundFiber.FALLBACK_POLICY_VIOLATION)
+        self.assertEqual(adm_pol, 0xFFFFFFFF)
+        self.assertIn("POLICY_SLOT", decode_inject_reasons(c_pol.last_reject_reason))
+
+        # Injection block 3: unbound slot (node 3)
+        _, v_unb, adm_unb, c_unb = admit_candidate_bytes(
+            sealed, SOUND_BIN, target_node=3, evid="sensory"
+        )
+        self.assertEqual(v_unb, SoundFiber.FALLBACK_POLICY_VIOLATION)
+        self.assertEqual(adm_unb, 0xFFFFFFFF)
+        self.assertEqual(decode_inject_reasons(c_unb.last_reject_reason), ["UNBOUND_SLOT"])
+
+        # Injection block 4: cross-plane sort & privilege escalation on bind slot (node 1)
+        _, v_esc, adm_esc, c_esc = admit_candidate_bytes(
+            sealed,
+            SOUND_BIN,
+            target_node=1,
+            force="declarative",
+            sort="institutional",
+            evid="enacted_norm",
+            node_flags=NODE_FLAG_CONSTITUTIVE,
+        )
+        self.assertEqual(v_esc, SoundFiber.FALLBACK_POLICY_VIOLATION)
+        self.assertEqual(adm_esc, 0xFFFFFFFF)
+        esc_reasons = decode_inject_reasons(c_esc.last_reject_reason)
+        self.assertIn("CROSS_PLANE_SORT", esc_reasons)
+        self.assertIn("PRIV_ESCALATION", esc_reasons)
+
+        # Injection block 5: topology mutation on bind slot (node 1)
+        _, v_topo, adm_topo, c_topo = admit_candidate_bytes(
+            sealed, SOUND_BIN, target_node=1, evid="sensory", attack_mask=0x1
+        )
+        self.assertEqual(v_topo, SoundFiber.FALLBACK_POLICY_VIOLATION)
+        self.assertEqual(adm_topo, 0xFFFFFFFF)
+        self.assertEqual(
+            decode_inject_reasons(c_topo.last_reject_reason), ["TOPOLOGY_MUTATION"]
+        )
+
+        # Injection block 6: NO_DIRECT_CLAIM enforcement on bind slot (node 1)
+        _, v_dir, adm_dir, c_dir = admit_candidate_bytes(
+            sealed, SOUND_BIN, target_node=1, evid="direct"
+        )
+        self.assertEqual(v_dir, SoundFiber.FALLBACK_POLICY_VIOLATION)
+        self.assertEqual(adm_dir, 0xFFFFFFFF)
+        self.assertEqual(
+            decode_inject_reasons(c_dir.last_reject_reason), ["DIRECT_CLAIM_FORBID"]
+        )
+
+        # Valid parameter binding on bind slot (node 1) -> committed & established propagation
+        bound, v_ok, adm_ok, c_ok = admit_candidate_bytes(
+            sealed, SOUND_BIN, target_node=1, sort="factual", evid="sensory"
+        )
+        self.assertEqual(v_ok, SoundFiber.COMMITTED)
+        self.assertEqual(c_ok.last_fiber, int(SoundFiber.COMMITTED))
+        self.assertEqual(adm_ok, 1)
+        self.assertEqual(c_ok.last_reject_reason, 0)
+        self.assertEqual(policy_verify_bytes(bound, SOUND_BIN), SoundFiber.COMMITTED)
+        ev_bound = verify_arena_bytes(bound, SOUND_BIN, backend="ffi")
+        self.assertEqual(ev_bound.nodes[1].status, "established")
+        self.assertEqual(ev_bound.nodes[0].status, "established")
+
+        # Post-seal policy tamper at cell 72 -> value-first FALLBACK_POLICY_TAMPER without throwing
+        tampered = bytearray(bound)
+        tampered[72 * 64 : 72 * 64 + 8] = b"\x00" * 8
+        tampered_bytes = bytes(tampered)
+        self.assertEqual(
+            policy_verify_bytes(tampered_bytes, SOUND_BIN), SoundFiber.FALLBACK_POLICY_TAMPER
+        )
+        tampered_admit, v_tamper, adm_tamper, c_tamper = admit_candidate_bytes(
+            tampered_bytes, SOUND_BIN, target_node=1, sort="factual", evid="sensory"
+        )
+        self.assertEqual(v_tamper, SoundFiber.FALLBACK_POLICY_TAMPER)
+        self.assertEqual(c_tamper.last_fiber, int(SoundFiber.FALLBACK_POLICY_TAMPER))
+        self.assertGreater(c_tamper.fiber_epoch, c_ok.fiber_epoch)
+        self.assertEqual(adm_tamper, 0xFFFFFFFF)
+        self.assertEqual(
+            decode_inject_reasons(c_tamper.last_reject_reason), ["POLICY_TAMPER"]
+        )
+        tamper_outcome = try_verify_arena_bytes(tampered_admit, SOUND_BIN, backend="ffi")
+        self.assertFalse(tamper_outcome.committed)
+        self.assertEqual(tamper_outcome.fiber, SoundFiber.FALLBACK_POLICY_TAMPER)
+
+        # Bit-flip tamper at cell 1 -> value-first FALLBACK_MAC without throwing
+        mac_bad = bytearray(bound)
+        mac_bad[64] ^= 0x01
+        mac_outcome = try_verify_arena_bytes(bytes(mac_bad), SOUND_BIN, backend="ffi")
+        self.assertFalse(mac_outcome.committed)
+        self.assertEqual(mac_outcome.fiber, SoundFiber.FALLBACK_MAC)
 
     def test_core_zero_coupling(self) -> None:
         core_files = ("Sound.lean", "Sound/Bilattice.lean", "sound.h", "sound.c", "sound_lean_jsi.c", "Makefile")
