@@ -20,14 +20,14 @@ jobs:
         os: [ ubuntu-latest, macos-latest ]
     steps:
       - name: Checkout FLOW (main)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: hianova/FLOW
           ref: main
           path: FLOW
 
       - name: Checkout SOUND
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: SOUND
 
@@ -42,11 +42,19 @@ jobs:
         run: |
           brew install llvm
 
+      - name: Cache Lean 4 Toolchain
+        uses: actions/cache@v5
+        with:
+          path: ~/.elan
+          key: ${{ runner.os }}-${{ runner.arch }}-elan-lean-4.36.0
+
       - name: Install Lean 4 Toolchain
         run: |
           set -euo pipefail
-          curl --retry 5 -sSfL https://elan.lean-lang.org/elan-init.sh -o /tmp/elan-init.sh
-          sh /tmp/elan-init.sh -y --default-toolchain leanprover/lean4:v4.36.0
+          if ! "$HOME/.elan/bin/lean" --version >/dev/null 2>&1; then
+            curl --retry 5 -sSfL https://elan.lean-lang.org/elan-init.sh -o /tmp/elan-init.sh
+            sh /tmp/elan-init.sh -y --default-toolchain leanprover/lean4:v4.36.0
+          fi
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
       - name: Build FLOW & Run All SOUND Core + SDK Verification Gates
