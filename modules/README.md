@@ -1,9 +1,8 @@
-# SOUND Domain Modules（稅務 & 會計基礎選擇題無運算陷阱辨識）
+# SOUND Python SDK（領域無關外圍橋接層）
 
-本資料夾為 [`SOUND`](../README.md) 核心之外的**領域應用模組層**，採單向零耦合邊界：
-> 相關模組：需要小說設定除錯、魂系道具敘事生成與永續多 NPC 互動原型，另見 [`modules/narrative/README.md`](narrative/README.md)。
-- 核心程式（`Sound.lean`、`sound.h`、`sound.c`、`sound_lean_jsi.c`、`Makefile`）**完全不引用** `modules/`、任何自然語言詞庫或會計／稅法領域名詞。
-- `modules/` 僅透過標準 `python3`（純 stdlib，零第三方套件）把宣告式領域 Topic Pack 與題目實例打包成 `16,384B` `"SND2"` `SoundArena`，單向呼叫 `./build/sound verify` 與 `./build/sound repair` 取得正式 4 值 bilattice 判定。
+本資料夾為 [`SOUND`](../README.md) 核心之外的**領域無關 Python SDK 層**，採單向零耦合邊界：
+- 核心程式（`Sound.lean`、`sound.h`、`sound.c`、`sound_lean_jsi.c`、`Makefile`）**完全不引用** `modules/` 或任何業務領域（如 [`../routine/`](../../routine/README.md)）。
+- `modules/` 僅透過標準 `python3`（純 stdlib，零第三方套件）提供 `16,384B` `"SND2"` `SoundArena` 的編解碼、`PreparedPolicy` 隔離、精確有理數 `ComputeBridge` 與幾何 `SpatialBridge`，單向呼叫 `build/libsound.dylib`（或 `./build/sound`）取得正式 4 值 bilattice 判定。
 
 ---
 
@@ -12,48 +11,22 @@
 ```text
 modules/
 ├── README.md
-├── Makefile                    # make -C modules verify
+├── Makefile                         # make -C modules verify
 ├── common/
 │   ├── __init__.py
-│   ├── arena_codec.py          # 16,384B SoundArena 二進位編碼、flow_aux[38][8] 讀寫、ctypes FFI 與 build/sound CLI 橋接
-│   ├── compute_bridge.py       # 領域無關有理數 Fraction DAG 求值、pro_rata 守恆、CB_AUX01 封印、FIR1 降階與 Lean 4 證明
+│   ├── arena_codec.py               # 16,384B SoundArena 二進位編碼、flow_aux[38][8] 讀寫、ctypes FFI 與 build/sound CLI 橋接
+│   ├── prepared_policy.py           # SQLite 式 PreparedPolicy SDK（政策/資料隔離、SipHash-2-4、加權 SEARU、Chart Gluing、FIR1）
+│   ├── compute_bridge.py            # 領域無關有理數 Fraction DAG 求值、pro_rata 守恆、CB_AUX01 封印、FIR1 降階與 Lean 4 證明
 │   ├── compute_bridge_contract.json
-│   ├── spatial_bridge.py       # 領域無關平面深度、多槽位遮擋、剛體附著、運動學煞停包絡與候選邊際檢定
+│   ├── spatial_bridge.py            # 領域無關平面深度、多槽位遮擋、剛體附著、運動學煞停包絡與候選邊際檢定
 │   ├── spatial_bridge_contract.json
-│   ├── tripwires.py            # 輕量高精準多語詞面引線（題幹極性反轉、絕對詞、未成就/假設詞、但書範圍詞）
-│   ├── mcq_engine.py           # Topic Pack 驗證、選項編譯、Hume/Presup/Exception/Penumbra 陷阱分類與作答
-│   ├── cli.py                  # 命令列工具（packs / benchmark / solve / compute / spatial）
-│   └── proposer_contract.json  # Stage 2 外部 LLM Proposer 輸出 JSON Schema 契約（無廠商綁定）
-├── taxation/
-│   ├── packs/
-│   │   ├── vat_zero_vs_exempt.json      # 台灣營業稅：零稅率 vs 免稅、放棄免稅 3 年鎖定、進項扣抵與退稅（26/64 節點）
-│   │   └── tax_roles_and_remedy.json    # 所得稅扣繳 vs 納稅義務人、復查前置與暫緩強制執行（22/64 節點）
-│   └── benchmarks/
-│       └── tw_tax_mcq.json              # 10 題台灣稅法基礎無運算選擇題（40 選項）
-├── accounting/
-│   ├── packs/
-│   │   ├── revenue_accrual_timing.json  # 權責發生制、IFRS 15 控制權移轉與 FOB 在途存貨歸屬（22/64 節點）
-│   │   └── provision_vs_contingent.json # IAS 37 負債準備、或有負債/資產門檻與 IAS 16 資收支出（28/64 節點）
-│   └── benchmarks/
-│       └── tw_accounting_mcq.json       # 10 題台灣初會 / IFRS 基礎無運算選擇題（40 選項）
+│   └── cli.py                       # 領域無關 CLI（compute / spatial）
 └── tests/
-    ├── test_modules.py         # 端到端編解碼防篡改、20 題／80 選項基準測試、FFI/CLI 一致性與核心零耦合檢查
-    ├── test_compute_bridge.py  # 有理數守恆、雙向 SOUND 閘控、CB_AUX01 封印、FIR1 C17 對等與 Lean 4 證明測試
-    └── test_spatial_bridge.py  # 平面深度、網格遮擋、剛體附著、煞停包絡與世界治理 Arena 測試
+    ├── test_modules.py              # 端到端編解碼防篡改、SEARU 修復、FFI/CLI 一致性、PreparedPolicy 隔離與核心零耦合檢查
+    ├── test_sound_hardening.py      # SipHash-2-4、原文 span hash 批次閘控、加權 SEARU、Chart Gluing 與 Policy FIR1 測試
+    ├── test_compute_bridge.py       # 有理數守恆、雙向 SOUND 閘控、CB_AUX01 封印、FIR1 C17 對等與 Lean 4 證明測試
+    └── test_spatial_bridge.py       # 平面深度、網格遮擋、剛體附著、煞停包絡與世界治理 Arena 測試
 ```
-
----
-
-## 選擇題非計算陷阱與 `SOUND` 核心狀態對照表
-
-| 考題陷阱分類 (`trap_type`) | 考題常見手法（稅務 / 會計） | `SOUND` 核心判定 (`status` / `reasons`) |
-| :--- | :--- | :--- |
-| `TRAP_EXCEPTION_IGNORED` | 選項使用「一律 / 皆 / 所有 / 無例外」忽略法條但書或準則例外（如境內銷售皆課 5%、所有支出列費用、逾期皆移送強制執行） | 展開 `universal_counterexamples` 後例外出線攻破原則 → `defeated` (`ATTACKED = 0x40`) |
-| `TRAP_CONCEPT_OR_ROLE_SWAP` | 偷換互斥概念或主體角色（如免稅誤作零稅率退稅、扣繳義務人誤作最終納稅人、FOB 起運點賣方負擔、極微流出強制附註揭露） | 互斥對偶概念已 `established` 並擊敗誤植主張 → `defeated` (`ATTACKED` 或 `NO_ACTIVE_CLAUSE`) |
-| `TRAP_UNVERIFIED_PRESUP` | 時點／條件未成就先推結論（如僅口頭約定就退稅、未經復查直接訴願、未移轉控制權認收入、僅「有可能」或金額不可靠估計就認負債準備） | 必要前提缺席或被標為 `evid=assumed` → `defeated` (`UNVERIFIED_PRESUP = 0x20` / `EVIDENTIAL_LEAF = 0x04`) |
-| `TRAP_HUME_IS_TO_OUGHT` | 把單純物理／簽約／付款／起訴「實然」事實直接說成公法課稅或會計認列「應然」義務，未經過任何法規／準則根節點 | 純 factual 前提直連 `normative` 非構成性節點 → `defeated` (`HUME_IS_TO_OUGHT = 0x08`) |
-| `TRAP_PENUMBRA_OVERCLAIM` | 把實質認定之灰色半影區（跨境數位使用地、租稅規避實質課稅、高度客製化收款權、低單價工具重大性）硬寫成「必定／一律成立」 | 核心輸出 `penumbraOpen` (`PENUMBRA = 0x01`) 而選項期望 `established` |
-| `TRAP_CONFLICT_UNRESOLVED` | 規範互斥對攻無法收斂之雙向衝突 | 核心輸出 `conflictUndecided`（可再經 `./build/sound repair` 求極大無衝突修復子集） |
 
 ---
 
@@ -62,41 +35,22 @@ modules/
 請先確保核心 `build/sound` 與純 C 共享庫 `build/libsound.dylib`（或 `.so`）已編譯（若尚未編譯，在倉庫根目錄執行 `make all`）；[arena_codec.py](common/arena_codec.py) 會自動優先走 `ctypes` 記憶體零 I/O FFI（微秒級），找不到共享庫時無縫退回 `./build/sound` CLI：
 
 ```bash
-# 0. 透過獨立 modules/Makefile 一鍵驗證全部領域模組（與根目錄 Makefile 零耦合）
+# 1. 一鍵驗證完整 SOUND SDK 測試套件
 make -C modules verify
 
-# 1. 列出並驗證全部 Topic Pack（含 64 節點預算檢查）
-python3 -m modules.common.cli packs
-
-# 2. 執行全部 20 題（80 選項）稅務與會計基準測試（逐題送入 build/sound verify）
-python3 -m modules.common.cli benchmark --all --verbose
-
-# 3. 單題除錯檢視每個節點之 SOUND 狀態與 reason 位元遮罩
-python3 -m modules.common.cli solve modules/taxation/benchmarks/tw_tax_mcq.json TW_TAX_VAT_01
-
-# 4. 執行領域無關 Compute Bridge（支援 --sound-verify / --lean-cert / --fir-out）
-python3 -m modules.common.cli compute - --sound-verify <<'EOF'
+# 2. 執行領域無關 Compute Bridge（支援 --emit-fir / --emit-lean）
+python3 -m modules.common.cli compute - <<'EOF'
 {"vars":{"p":100000,"r":"0.05"},"exprs":{"res":["recur_fold","p",3,["mul","s",["add",1,"r"]],"s","k"]},"predicates":{"ok":["gt","res",110000]}}
 EOF
 
-# 5. 執行領域無關 Spatial Bridge（支援 --sound-verify）
-python3 -m modules.common.cli spatial - --sound-verify <<'EOF'
-{"kinematic_envelope":{"speed":25,"max_decel":5,"distance":40},"predicate_bindings":{"fact_stop":"can_stop"}}
+# 3. 執行領域無關 Spatial Bridge
+python3 -m modules.common.cli spatial - <<'EOF'
+{"kinematic_envelope":{"speed":25,"max_decel":5,"distance":40}}
 EOF
-
-# 6. 執行完整 unittest 套件
-python3 -m unittest discover -s modules/tests -v
 ```
 
 ---
 
-## Stage 2：如何對接外部 LLM Proposer 與量化／空間雙橋
+## 業務應用串接
 
-在雙層架構中，外部 LLM 嚴禁在自然語言輸出中自行心算或擅自宣告授權：
-1. **規則與條文選擇（[`proposer_contract.json`](common/proposer_contract.json)）**：LLM 只負責將純文字題幹映射為 Topic Pack 節點 ID、`unverified_facts`、`universal_scope` 與 `claim`，交由 `mcq_engine.py` ＋ `./build/sound` 做出可稽核的形式判決。
-2. **精確有理數計算（[`compute_bridge.py`](common/compute_bridge.py) / [`compute_bridge_contract.json`](common/compute_bridge_contract.json)）**：LLM 只輸出精簡 JSON DAG（缺值設 `null`），由 `Fraction` 引擎求確值並依 `SOUND` 節點雙向閘控；缺值或除零自動傳遞成 `penumbraOpen`，整數子集可降階至 `FLOW` `"FIR1"` 與無 `import` 的 Lean 4 `decide` 證明。
-3. **空間幾何與感測檢定（[`spatial_bridge.py`](common/spatial_bridge.py) / [`spatial_bridge_contract.json`](common/spatial_bridge_contract.json)）**：將感知層輸入的深度採樣、遮擋點陣、邊界框序列、煞停參數與候選分數轉成確定性布林／半影謂詞，寫入 `16,384B` `SoundArena` 再交由 `SOUND` Ring-0 裁決。
-4. **語意 LaTeX ↔ SOUND 理解問答介面（[`modules/latex/`](latex/cli.py)）**：
-   * 透過 [`sound_macros.tex`](latex/sound_macros.tex) 為數學講義（如 [`real_analysis_evt_ivt.tex`](latex/docs/real_analysis_evt_ivt.tex)）與法規條文（如 [`tw_vat_statute_provisos.tex`](latex/docs/tw_vat_statute_provisos.tex)）標註節點、`KanLock` 公理、`bind` 參數槽、前提 `\soundpresup`、反例／但書 `\soundattacks` 與內嵌問答 `\begin{soundqa}`（同時相容標準 LaTeX PDF 排版）。
-   * [`latex_compiler.py`](latex/latex_compiler.py) 精確追蹤 `.tex` UTF-8 位元組區間並封存成 `16,384B` Prepared-Statement `SoundArena`（可匯出標準 Topic Pack）。
-   * [`qa_verifier.py`](latex/qa_verifier.py) 與 [`latex_emitter.py`](latex/latex_emitter.py) 支援互動問答（`python3 -m modules.latex.cli interactive <file.tex>`）、蘇格拉底式條件移除測試（`ablate`）、`SEARU` 衝突最小撤回與結構完整的可稽核 `.tex` 報告反匯出（`emit-report`）。
+具體企業業務規則、帳本守恆、單據 Adapter 與持久化稽核管線統一放在外部獨立專案 [`../routine/`](../../routine/README.md)，本目錄僅維持領域無關之 SDK 元件。

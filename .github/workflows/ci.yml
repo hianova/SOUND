@@ -1,0 +1,62 @@
+name: CI
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  push:
+    branches: [ main, "feat/**", "refactor/**" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  verify-sound:
+    name: SOUND Ring-0 Kernel, JSI, Sabotage & Domain-Free SDK (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest ]
+    steps:
+      - name: Checkout FLOW (main)
+        uses: actions/checkout@v4
+        with:
+          repository: hianova/FLOW
+          ref: main
+          path: FLOW
+
+      - name: Checkout SOUND
+        uses: actions/checkout@v4
+        with:
+          path: SOUND
+
+      - name: Install Clang Toolchain (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang clang-tidy clang-format
+
+      - name: Install LLVM Toolchain (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm
+
+      - name: Install Lean 4 Toolchain
+        run: |
+          curl -sSf https://raw.githubusercontent.com/elanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain leanprover/lean4:v4.36.0
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Build FLOW & Run All SOUND Core + SDK Verification Gates
+        run: |
+          export PATH="$HOME/.elan/bin:$PATH"
+          if [ "$(uname -s)" = "Darwin" ]; then
+            export PATH="$(brew --prefix llvm)/bin:$PATH"
+          fi
+          make -C FLOW all CC=clang CXX=clang++
+          make -C SOUND clean
+          make -C SOUND test sabotage-check CC=clang CXX=clang++
+          if [ "$(uname -s)" = "Darwin" ]; then
+            make -C SOUND fmt-check
+          fi
+          make -C SOUND/modules verify
