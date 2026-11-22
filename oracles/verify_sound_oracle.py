@@ -445,6 +445,7 @@ def verify_all_hunts_and_certs() -> None:
         ("aspect-firewall", "CertAspectFirewall"),
         ("presup-filter", "CertPresupFilter"),
         ("contract-drift", "CertContractDrift"),
+        ("contract-loophole", "CertContractLoophole"),
     ]
     jobs = []
     for mode, mod_name in modes:
@@ -509,6 +510,15 @@ def verify_all_hunts_and_certs() -> None:
             assert w["benefit_drift"] == w["worst_case_loss"] - w["max_loss_cap"] > 0
             assert w["repaired_worst_loss"] <= w["max_loss_cap"]
             assert (w["viol_flags"] & 0xBF) == 0xBF
+        elif mode == "contract-loophole":
+            assert w["certified"] == 0 and w["verdict"] == "VETOED"
+            assert w["repaired_certified"] == 1
+            assert w["num_predatory_clauses"] == 0
+            assert w["num_edges"] == 3 and w["num_malicious_edges"] == 3
+            assert w["graph_sheaf_h1_obstructed"] == 1
+            assert (w["graph_bypass_mask"] & 1) == 1
+            assert w["benefit_drift"] == w["worst_case_loss"] - w["max_loss_cap"] > 0
+            assert (w["viol_flags"] & 0x302) == 0x302
 
         jobs.append((mode, lean_p, mod_name))
 
@@ -519,7 +529,7 @@ def verify_all_hunts_and_certs() -> None:
         for f in futs:
             m, n_thms = f.result()
             summary.append(f"{m}({n_thms} thms)")
-    print(f"  [Oracle-CertReplay] 7/7 live lean + leanchecker + 0 sorryAx PASS: {', '.join(summary)}")
+    print(f"  [Oracle-CertReplay] 8/8 live lean + leanchecker + 0 sorryAx PASS: {', '.join(summary)}")
 
 
 def main() -> int:
@@ -534,7 +544,7 @@ def main() -> int:
     verify_classify_hohfeld()
     verify_classify_projection()
     verify_all_hunts_and_certs()
-    print("[Gate 5] PASS (100% Lean<->C17 parity, 4/4 classifiers, 7/7 live Lean+leanchecker certs)")
+    print("[Gate 5] PASS (100% Lean<->C17 parity, 4/4 classifiers, 8/8 live Lean+leanchecker certs)")
     return 0
 
 

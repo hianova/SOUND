@@ -3015,6 +3015,107 @@ void sound_audit_contract(const sound_contract_spec_t *spec, sound_contract_audi
         }
     }
 
+    uint32_t ne = spec->num_edges;
+    if (ne > SOUND_CONTRACT_MAX_EDGES) {
+        ne = SOUND_CONTRACT_MAX_EDGES;
+        out->viol_flags |= (uint32_t)SOUND_CVIOL_BENEFIT_DRIFT;
+    }
+
+    uint64_t edge_exp_sum = UINT64_C(0);
+    uint32_t bypass_reach = UINT32_C(0);
+    for (uint32_t i = 0U; i < n; i++) {
+        if (spec->clauses[i].kind == (uint8_t)SOUND_CLAUSE_UNILATERAL_POWER) {
+            bypass_reach |= (UINT32_C(1) << i);
+        }
+    }
+    for (uint32_t ei = 0U; ei < ne; ei++) {
+        const sound_contract_edge_t *e = &spec->edges[ei];
+        edge_exp_sum = sound__sat_add_u64(edge_exp_sum, e->extra_exposure);
+        bool is_benign_redirect = (e->edge_kind == (uint8_t)SOUND_EDGE_REDIRECT) &&
+                                  ((e->cocycle_shift & UINT8_C(3)) == UINT8_C(0)) &&
+                                  (e->extra_exposure == UINT64_C(0));
+        if (!is_benign_redirect) {
+            out->num_malicious_edges++;
+        }
+        if (e->edge_kind == (uint8_t)SOUND_EDGE_DEFAULT_TRIGGER &&
+            e->extra_exposure > UINT64_C(0)) {
+            out->viol_flags |= (uint32_t)SOUND_CVIOL_GRAPH_CASCADE;
+        }
+        if (e->dst < n && (e->edge_kind == (uint8_t)SOUND_EDGE_OVERRIDE ||
+                           e->edge_kind == (uint8_t)SOUND_EDGE_POWER_DELEGATE)) {
+            bypass_reach |= (UINT32_C(1) << e->dst);
+        }
+    }
+    for (uint32_t step = 0U; step < n; step++) {
+        uint32_t next_reach = bypass_reach;
+        for (uint32_t ei = 0U; ei < ne; ei++) {
+            const sound_contract_edge_t *e = &spec->edges[ei];
+            if (e->src < n && e->dst < n &&
+                (e->edge_kind == (uint8_t)SOUND_EDGE_OVERRIDE ||
+                 e->edge_kind == (uint8_t)SOUND_EDGE_POWER_DELEGATE ||
+                 e->edge_kind == (uint8_t)SOUND_EDGE_REDIRECT)) {
+                if ((bypass_reach & (UINT32_C(1) << e->src)) != UINT32_C(0)) {
+                    next_reach |= (UINT32_C(1) << e->dst);
+                }
+            }
+        }
+        bypass_reach = next_reach;
+    }
+    for (uint32_t i = 0U; i < n; i++) {
+        if ((bypass_reach & (UINT32_C(1) << i)) != UINT32_C(0) &&
+            (spec->clauses[i].target_mask & spec->protected_mask) != UINT64_C(0)) {
+            out->graph_bypass_mask |= (UINT32_C(1) << i);
+        }
+    }
+    if (out->graph_bypass_mask != UINT32_C(0)) {
+        out->viol_flags |= (uint32_t)SOUND_CVIOL_GRAPH_BYPASS;
+    }
+
+    uint8_t pot[SOUND_CONTRACT_MAX_CLAUSES];
+    uint8_t vis[SOUND_CONTRACT_MAX_CLAUSES];
+    sound_zero_bytes(pot, sizeof(pot));
+    sound_zero_bytes(vis, sizeof(vis));
+    for (uint32_t root = 0U; root < n; root++) {
+        if (vis[root] != UINT8_C(0)) {
+            continue;
+        }
+        vis[root] = UINT8_C(1);
+        pot[root] = UINT8_C(0);
+        for (uint32_t step = 0U; step < n; step++) {
+            for (uint32_t ei = 0U; ei < ne; ei++) {
+                const sound_contract_edge_t *e = &spec->edges[ei];
+                if (e->src < n && e->dst < n) {
+                    uint32_t sh = (uint32_t)e->cocycle_shift & UINT32_C(3);
+                    if (vis[e->src] != UINT8_C(0) && vis[e->dst] == UINT8_C(0)) {
+                        vis[e->dst] = UINT8_C(1);
+                        pot[e->dst] = (uint8_t)(((uint32_t)pot[e->src] + sh) & UINT32_C(3));
+                    } else if (vis[e->src] == UINT8_C(0) && vis[e->dst] != UINT8_C(0)) {
+                        vis[e->src] = UINT8_C(1);
+                        pot[e->src] =
+                            (uint8_t)(((uint32_t)pot[e->dst] + UINT32_C(4) - sh) & UINT32_C(3));
+                    }
+                }
+            }
+        }
+    }
+    for (uint32_t ei = 0U; ei < ne; ei++) {
+        const sound_contract_edge_t *e = &spec->edges[ei];
+        if (e->src < n && e->dst < n) {
+            uint32_t sh = (uint32_t)e->cocycle_shift & UINT32_C(3);
+            uint32_t diff =
+                ((uint32_t)pot[e->dst] + UINT32_C(4) - (uint32_t)pot[e->src]) & UINT32_C(3);
+            if (vis[e->src] == UINT8_C(0) || vis[e->dst] == UINT8_C(0) || diff != sh) {
+                out->graph_sheaf_h1_obstructed = UINT32_C(1);
+                out->viol_flags |= (uint32_t)SOUND_CVIOL_GRAPH_SHEAF_H1;
+            }
+        }
+    }
+
+    if (spec->coverage_gaps != UINT32_C(0)) {
+        out->viol_flags |= (uint32_t)SOUND_CVIOL_COVERAGE_GAP;
+    }
+
+    worst_sum = sound__sat_add_u64(worst_sum, edge_exp_sum);
     if (worst_sum > spec->max_loss_cap) {
         out->viol_flags |= (uint32_t)SOUND_CVIOL_BENEFIT_DRIFT;
     }
@@ -3026,15 +3127,18 @@ void sound_audit_contract(const sound_contract_spec_t *spec, sound_contract_audi
     int64_t cap_i64 =
         (spec->max_loss_cap <= (uint64_t)INT64_MAX) ? (int64_t)spec->max_loss_cap : INT64_MAX;
     out->base_loss_sum = base_sum;
+    out->edge_exposure_sum = edge_exp_sum;
     out->worst_case_loss = worst_sum;
     out->benefit_drift = w_i64 - cap_i64;
     out->repaired_worst_loss = rep_worst_sum;
     out->certified = (spec->num_clauses <= SOUND_CONTRACT_MAX_CLAUSES &&
+                      spec->num_edges <= SOUND_CONTRACT_MAX_EDGES &&
                       out->viol_flags == UINT32_C(0) && out->num_predatory_clauses == UINT32_C(0))
                          ? UINT32_C(1)
                          : UINT32_C(0);
     out->repaired_certified =
-        (spec->num_clauses <= SOUND_CONTRACT_MAX_CLAUSES && spec->max_asym_den != UINT64_C(0) &&
+        (spec->num_clauses <= SOUND_CONTRACT_MAX_CLAUSES &&
+         spec->num_edges <= SOUND_CONTRACT_MAX_EDGES && spec->max_asym_den != UINT64_C(0) &&
          rep_worst_sum <= spec->max_loss_cap)
             ? UINT32_C(1)
             : UINT32_C(0);
@@ -3045,6 +3149,10 @@ void sound_audit_contract(const sound_contract_spec_t *spec, sound_contract_audi
     mh = sound_fnv1a_u64(mh, out->worst_case_loss);
     mh = sound_fnv1a_u64(mh, out->repaired_worst_loss);
     mh = sound_fnv1a_u64(mh, (uint64_t)out->num_predatory_clauses);
+    mh = sound_fnv1a_u64(mh, (uint64_t)out->num_malicious_edges);
+    mh = sound_fnv1a_u64(mh, (uint64_t)out->graph_sheaf_h1_obstructed);
+    mh = sound_fnv1a_u64(mh, (uint64_t)out->graph_bypass_mask);
+    mh = sound_fnv1a_u64(mh, out->edge_exposure_sum);
     out->merkle = mh;
 }
 
@@ -3106,6 +3214,75 @@ void sound_hunt_contract_drift(uint64_t seed, sound_contract_spec_t *spec_out,
     spec_out->clauses[4].exit_fee = UINT64_C(12000);
     spec_out->clauses[4].cons_penalty = UINT64_C(50000);
     spec_out->clauses[4].inst_penalty = UINT64_C(0);
+
+    sound_audit_contract(spec_out, audit_out);
+}
+
+void sound_hunt_contract_loophole(uint64_t seed, sound_contract_spec_t *spec_out,
+                                  sound_contract_audit_t *audit_out) {
+    if (spec_out == NULL || audit_out == NULL) {
+        return;
+    }
+    sound_zero_bytes(spec_out, sizeof(*spec_out));
+    uint64_t r = seed ^ UINT64_C(0x4C4F4F50484F4C45);
+    uint64_t d = sound__splitmix64(&r);
+
+    spec_out->seed = seed;
+    spec_out->max_loss_cap = UINT64_C(10000);
+    spec_out->max_exit_fee = UINT64_C(2000);
+    spec_out->protected_mask = UINT64_C(0x1);
+    spec_out->max_asym_num = UINT64_C(2);
+    spec_out->max_asym_den = UINT64_C(1);
+    spec_out->num_clauses = 3U;
+
+    /* Individually all 3 clauses look clean and within cap (5000 + 3000 + 1000 <= 10000) */
+    spec_out->clauses[0].clause_id = 1U;
+    spec_out->clauses[0].kind = (uint8_t)SOUND_CLAUSE_BASE_FEE;
+    spec_out->clauses[0].disclosed = UINT8_C(1);
+    spec_out->clauses[0].b4_truth = (uint8_t)SOUND_B4_TRUE;
+    spec_out->clauses[0].target_mask = UINT64_C(0x1);
+    spec_out->clauses[0].base_loss = UINT64_C(5000) + (d & UINT64_C(255));
+    spec_out->clauses[0].exit_fee = UINT64_C(500);
+    spec_out->clauses[0].cons_penalty = UINT64_C(100);
+    spec_out->clauses[0].inst_penalty = UINT64_C(100);
+
+    spec_out->clauses[1].clause_id = 2U;
+    spec_out->clauses[1].kind = (uint8_t)SOUND_CLAUSE_RECIPROCITY;
+    spec_out->clauses[1].disclosed = UINT8_C(1);
+    spec_out->clauses[1].b4_truth = (uint8_t)SOUND_B4_TRUE;
+    spec_out->clauses[1].base_loss = UINT64_C(3000);
+    spec_out->clauses[1].exit_fee = UINT64_C(500);
+    spec_out->clauses[1].cons_penalty = UINT64_C(100);
+    spec_out->clauses[1].inst_penalty = UINT64_C(100);
+
+    spec_out->clauses[2].clause_id = 3U;
+    spec_out->clauses[2].kind = (uint8_t)SOUND_CLAUSE_RECIPROCITY;
+    spec_out->clauses[2].disclosed = UINT8_C(1);
+    spec_out->clauses[2].b4_truth = (uint8_t)SOUND_B4_TRUE;
+    spec_out->clauses[2].base_loss = UINT64_C(1000);
+    spec_out->clauses[2].exit_fee = UINT64_C(500);
+    spec_out->clauses[2].cons_penalty = UINT64_C(100);
+    spec_out->clauses[2].inst_penalty = UINT64_C(100);
+
+    /* Compositional cross-clause Mobius H^1 = 3 mod 4 loop + immunity bypass + default trigger */
+    spec_out->num_edges = 3U;
+    spec_out->edges[0].src = 0U;
+    spec_out->edges[0].dst = 1U;
+    spec_out->edges[0].edge_kind = (uint8_t)SOUND_EDGE_REDIRECT;
+    spec_out->edges[0].cocycle_shift = UINT8_C(1);
+    spec_out->edges[0].extra_exposure = UINT64_C(0);
+
+    spec_out->edges[1].src = 1U;
+    spec_out->edges[1].dst = 2U;
+    spec_out->edges[1].edge_kind = (uint8_t)SOUND_EDGE_POWER_DELEGATE;
+    spec_out->edges[1].cocycle_shift = UINT8_C(1);
+    spec_out->edges[1].extra_exposure = UINT64_C(0);
+
+    spec_out->edges[2].src = 2U;
+    spec_out->edges[2].dst = 0U;
+    spec_out->edges[2].edge_kind = (uint8_t)SOUND_EDGE_OVERRIDE;
+    spec_out->edges[2].cocycle_shift = UINT8_C(1);
+    spec_out->edges[2].extra_exposure = UINT64_C(5000);
 
     sound_audit_contract(spec_out, audit_out);
 }

@@ -899,6 +899,21 @@ static inline const char *sound_cert_clause_kind_lean(uint8_t k) {
     }
 }
 
+static inline const char *sound_cert_edge_kind_lean(uint8_t k) {
+    switch (k) {
+    case (uint8_t)SOUND_EDGE_OVERRIDE:
+        return ".override";
+    case (uint8_t)SOUND_EDGE_REDIRECT:
+        return ".redirect";
+    case (uint8_t)SOUND_EDGE_POWER_DELEGATE:
+        return ".powerDelegate";
+    case (uint8_t)SOUND_EDGE_DEFAULT_TRIGGER:
+        return ".defaultTrigger";
+    default:
+        return ".redirect";
+    }
+}
+
 static inline bool sound_cert_emit_contract_lean(const sound_contract_spec_t *spec,
                                                  const sound_contract_audit_t *audit,
                                                  const char *path) {
@@ -913,9 +928,15 @@ static inline bool sound_cert_emit_contract_lean(const sound_contract_spec_t *sp
     if (n > SOUND_CONTRACT_MAX_CLAUSES) {
         n = SOUND_CONTRACT_MAX_CLAUSES;
     }
+    uint32_t ne = spec->num_edges;
+    if (ne > SOUND_CONTRACT_MAX_EDGES) {
+        ne = SOUND_CONTRACT_MAX_EDGES;
+    }
+    bool use_graph = (ne > UINT32_C(0)) || (spec->coverage_gaps > UINT32_C(0));
 
     fprintf(fp, "import Sound.Theory\n\n");
-    fprintf(fp, "namespace Sound.CertContractDrift\n\n");
+    fprintf(fp, "namespace %s\n\n",
+            use_graph ? "Sound.CertContractLoophole" : "Sound.CertContractDrift");
     fprintf(fp, "open Sound.Contract Sound.Bilattice\n\n");
     fprintf(fp, "def spec : SummarySpec :=\n");
     fprintf(fp,
@@ -945,44 +966,120 @@ static inline bool sound_cert_emit_contract_lean(const sound_contract_spec_t *sp
         fprintf(fp, "  ]\n\n");
     }
 
-    if (audit->certified == UINT32_C(1)) {
-        fprintf(fp, "theorem cert_contract_verdict :\n");
-        fprintf(fp, "    auditContract spec clauses = .certified := by\n");
-        fprintf(fp, "  decide\n\n");
+    if (use_graph) {
+        fprintf(fp, "def edges : List ClauseEdge :=\n");
+        if (ne == 0U) {
+            fprintf(fp, "  []\n\n");
+        } else {
+            for (uint32_t i = 0U; i < ne; i++) {
+                const sound_contract_edge_t *e = &spec->edges[i];
+                fprintf(fp,
+                        "  %c { src := %u, dst := %u, edgeKind := %s, cocycleShift := %u#2, "
+                        "extraExposure := %llu }\n",
+                        (i == 0U) ? '[' : ',', (unsigned)e->src, (unsigned)e->dst,
+                        sound_cert_edge_kind_lean(e->edge_kind),
+                        (unsigned)(e->cocycle_shift & UINT8_C(3)),
+                        (unsigned long long)e->extra_exposure);
+            }
+            fprintf(fp, "  ]\n\n");
+        }
+        fprintf(fp, "def coverageGaps : Nat := %u\n\n", (unsigned)spec->coverage_gaps);
 
-        fprintf(fp, "theorem cert_adversarial_loss_bound (act : AdversarialAction) :\n");
-        fprintf(fp, "    actualConsumerLoss act clauses ≤ spec.maxLossCap :=\n");
-        fprintf(fp,
-                "  certified_bounds_adversarial_loss spec clauses cert_contract_verdict act\n\n");
-
-        fprintf(fp, "theorem cert_zero_benefit_drift :\n");
-        fprintf(fp, "    benefitDrift spec clauses ≤ 0 :=\n");
-        fprintf(fp, "  certified_zero_benefit_drift spec clauses cert_contract_verdict\n\n");
-    } else {
-        fprintf(fp, "theorem cert_contract_vetoed :\n");
-        fprintf(fp, "    auditContract spec clauses = .vetoed := by\n");
-        fprintf(fp, "  decide\n\n");
-        if (audit->repaired_certified == UINT32_C(1)) {
-            fprintf(fp, "theorem cert_repaired_certified :\n");
-            fprintf(fp,
-                    "    auditContract spec (repairContract spec clauses) = .certified := by\n");
+        if (audit->certified == UINT32_C(1)) {
+            fprintf(fp, "theorem cert_graph_verdict :\n");
+            fprintf(fp, "    auditContractGraph spec clauses edges 0 = .certified := by\n");
             fprintf(fp, "  decide\n\n");
 
-            fprintf(fp, "theorem cert_repaired_adversarial_bound (act : AdversarialAction) :\n");
+            fprintf(fp, "theorem cert_graph_loss_bound (act : AdversarialAction) :\n");
             fprintf(
                 fp,
-                "    actualConsumerLoss act (repairContract spec clauses) ≤ spec.maxLossCap :=\n");
-            fprintf(fp, "  certified_bounds_adversarial_loss spec (repairContract spec clauses) "
-                        "cert_repaired_certified act\n\n");
+                "    actualConsumerLoss act clauses + edgesExposure edges ≤ spec.maxLossCap :=\n");
+            fprintf(
+                fp,
+                "  compositional_certified_bounds_loss spec clauses edges cert_graph_verdict act\n\n");
+
+            fprintf(fp, "theorem cert_base_verdict :\n");
+            fprintf(fp, "    auditContract spec clauses = .certified := by\n");
+            fprintf(fp, "  decide\n\n");
+
+            fprintf(fp, "theorem cert_zero_benefit_drift :\n");
+            fprintf(fp, "    benefitDrift spec clauses ≤ 0 :=\n");
+            fprintf(fp, "  certified_zero_benefit_drift spec clauses cert_base_verdict\n\n");
         } else {
-            fprintf(fp, "theorem cert_repair_removes_predatory :\n");
-            fprintf(fp,
-                    "    ∀ c ∈ repairContract spec clauses, clausePredatory spec c = false :=\n");
-            fprintf(fp, "  (repair_eliminates_predatory_clauses spec clauses).1\n\n");
+            fprintf(fp, "theorem cert_graph_vetoed :\n");
+            fprintf(fp, "    auditContractGraph spec clauses edges coverageGaps = .vetoed := by\n");
+            fprintf(fp, "  decide\n\n");
+            if (audit->repaired_certified == UINT32_C(1)) {
+                fprintf(fp, "theorem cert_repaired_graph_certified :\n");
+                fprintf(fp,
+                        "    auditContractGraph spec (repairContractGraph spec clauses edges).1 "
+                        "(repairContractGraph spec clauses edges).2 0 = .certified := by\n");
+                fprintf(fp, "  decide\n\n");
+
+                fprintf(fp, "theorem cert_repaired_graph_loss_bound (act : AdversarialAction) :\n");
+                fprintf(
+                    fp,
+                    "    actualConsumerLoss act (repairContractGraph spec clauses edges).1 +\n");
+                fprintf(
+                    fp,
+                    "      edgesExposure (repairContractGraph spec clauses edges).2 ≤ spec.maxLossCap :=\n");
+                fprintf(fp, "  compositional_certified_bounds_loss spec "
+                            "(repairContractGraph spec clauses edges).1 "
+                            "(repairContractGraph spec clauses edges).2 "
+                            "cert_repaired_graph_certified act\n\n");
+            } else {
+                fprintf(fp, "theorem cert_repaired_edges_clean :\n");
+                fprintf(fp,
+                        "    edgesExposure (repairContractGraph spec clauses edges).2 = 0 :=\n");
+                fprintf(fp, "  (graph_repair_restores_certified spec clauses edges).1\n\n");
+            }
         }
+        fprintf(fp, "end Sound.CertContractLoophole\n");
+    } else {
+        if (audit->certified == UINT32_C(1)) {
+            fprintf(fp, "theorem cert_contract_verdict :\n");
+            fprintf(fp, "    auditContract spec clauses = .certified := by\n");
+            fprintf(fp, "  decide\n\n");
+
+            fprintf(fp, "theorem cert_adversarial_loss_bound (act : AdversarialAction) :\n");
+            fprintf(fp, "    actualConsumerLoss act clauses ≤ spec.maxLossCap :=\n");
+            fprintf(
+                fp,
+                "  certified_bounds_adversarial_loss spec clauses cert_contract_verdict act\n\n");
+
+            fprintf(fp, "theorem cert_zero_benefit_drift :\n");
+            fprintf(fp, "    benefitDrift spec clauses ≤ 0 :=\n");
+            fprintf(fp, "  certified_zero_benefit_drift spec clauses cert_contract_verdict\n\n");
+        } else {
+            fprintf(fp, "theorem cert_contract_vetoed :\n");
+            fprintf(fp, "    auditContract spec clauses = .vetoed := by\n");
+            fprintf(fp, "  decide\n\n");
+            if (audit->repaired_certified == UINT32_C(1)) {
+                fprintf(fp, "theorem cert_repaired_certified :\n");
+                fprintf(
+                    fp,
+                    "    auditContract spec (repairContract spec clauses) = .certified := by\n");
+                fprintf(fp, "  decide\n\n");
+
+                fprintf(fp,
+                        "theorem cert_repaired_adversarial_bound (act : AdversarialAction) :\n");
+                fprintf(
+                    fp,
+                    "    actualConsumerLoss act (repairContract spec clauses) ≤ spec.maxLossCap :=\n");
+                fprintf(fp,
+                        "  certified_bounds_adversarial_loss spec (repairContract spec clauses) "
+                        "cert_repaired_certified act\n\n");
+            } else {
+                fprintf(fp, "theorem cert_repair_removes_predatory :\n");
+                fprintf(
+                    fp,
+                    "    ∀ c ∈ repairContract spec clauses, clausePredatory spec c = false :=\n");
+                fprintf(fp, "  (repair_eliminates_predatory_clauses spec clauses).1\n\n");
+            }
+        }
+        fprintf(fp, "end Sound.CertContractDrift\n");
     }
 
-    fprintf(fp, "end Sound.CertContractDrift\n");
     fclose(fp);
     return true;
 }
@@ -1068,11 +1165,18 @@ static inline bool sound_cert_emit_contract_json(const sound_contract_spec_t *sp
             (audit->certified != UINT32_C(0)) ? "CERTIFIED" : "VETOED");
     fprintf(fp, "  \"viol_flags\": %u,\n", (unsigned)audit->viol_flags);
     fprintf(fp, "  \"num_clauses\": %u,\n", (unsigned)spec->num_clauses);
+    fprintf(fp, "  \"num_edges\": %u,\n", (unsigned)spec->num_edges);
+    fprintf(fp, "  \"coverage_gaps\": %u,\n", (unsigned)spec->coverage_gaps);
     fprintf(fp, "  \"num_predatory_clauses\": %u,\n", (unsigned)audit->num_predatory_clauses);
+    fprintf(fp, "  \"num_malicious_edges\": %u,\n", (unsigned)audit->num_malicious_edges);
+    fprintf(fp, "  \"graph_sheaf_h1_obstructed\": %u,\n",
+            (unsigned)audit->graph_sheaf_h1_obstructed);
+    fprintf(fp, "  \"graph_bypass_mask\": %u,\n", (unsigned)audit->graph_bypass_mask);
     fprintf(fp, "  \"repaired_certified\": %u,\n", (unsigned)audit->repaired_certified);
     fprintf(fp, "  \"max_loss_cap\": %llu,\n", (unsigned long long)spec->max_loss_cap);
     fprintf(fp, "  \"max_exit_fee\": %llu,\n", (unsigned long long)spec->max_exit_fee);
     fprintf(fp, "  \"base_loss_sum\": %llu,\n", (unsigned long long)audit->base_loss_sum);
+    fprintf(fp, "  \"edge_exposure_sum\": %llu,\n", (unsigned long long)audit->edge_exposure_sum);
     fprintf(fp, "  \"worst_case_loss\": %llu,\n", (unsigned long long)audit->worst_case_loss);
     fprintf(fp, "  \"benefit_drift\": %lld,\n", (long long)audit->benefit_drift);
     fprintf(fp, "  \"max_exit_seen\": %llu,\n", (unsigned long long)audit->max_exit_seen);
@@ -1087,6 +1191,124 @@ static inline bool sound_cert_emit_contract_json(const sound_contract_spec_t *sp
     fprintf(fp, "  \"fir_wire_bytes\": %zu,\n", (ws != NULL) ? ws->wire_len : 0U);
     fprintf(fp, "  \"fir_eval_ok\": %s\n", (ws != NULL && ws->ir_eval_ok) ? "true" : "false");
     fprintf(fp, "}\n");
+    fclose(fp);
+    return true;
+}
+
+static inline bool sound_cert_emit_contract_receipt(const sound_contract_spec_t *spec,
+                                                    const sound_contract_audit_t *audit,
+                                                    const char *path) {
+    if (spec == NULL || audit == NULL || path == NULL) {
+        return false;
+    }
+    FILE *fp = fopen(path, "wb");
+    if (fp == NULL) {
+        return false;
+    }
+    uint32_t n = spec->num_clauses;
+    if (n > SOUND_CONTRACT_MAX_CLAUSES) {
+        n = SOUND_CONTRACT_MAX_CLAUSES;
+    }
+    uint32_t ne = spec->num_edges;
+    if (ne > SOUND_CONTRACT_MAX_EDGES) {
+        ne = SOUND_CONTRACT_MAX_EDGES;
+    }
+
+    fprintf(fp, "# SOUND Contract Informed-Consent & Risk Receipt\n\n");
+    fprintf(fp, "- **Verdict**: `%s` (`merkle=0x%016llx`, `viol_flags=0x%03x`)\n",
+            (audit->certified != UINT32_C(0)) ? "CERTIFIED — SAFE TO SIGN" : "VETOED — DO NOT SIGN",
+            (unsigned long long)audit->merkle, (unsigned)audit->viol_flags);
+    fprintf(fp,
+            "- **Promised Summary Cap (`max_loss_cap`)**: `%llu` | **Max Exit Fee Cap**: `%llu`\n",
+            (unsigned long long)spec->max_loss_cap, (unsigned long long)spec->max_exit_fee);
+    fprintf(fp,
+            "- **Adversarial Worst-Case Consumer Loss**: `%llu` "
+            "(disclosed base `%llu` + cross-clause exposure `%llu`)\n",
+            (unsigned long long)audit->worst_case_loss, (unsigned long long)audit->base_loss_sum,
+            (unsigned long long)audit->edge_exposure_sum);
+    fprintf(fp, "- **Benefit Drift (`worst - cap`)**: `%+lld`\n", (long long)audit->benefit_drift);
+    if (spec->coverage_gaps != UINT32_C(0)) {
+        fprintf(fp,
+                "- **Coverage Gate (`0x%x`)**: **FAIL-CLOSED — %u raw sentence(s) with amounts "
+                "or high-risk triggers omitted from summary/clauses**\n",
+                (unsigned)SOUND_CVIOL_COVERAGE_GAP, (unsigned)spec->coverage_gaps);
+    }
+    fprintf(fp, "\n## Adversarial Counterexample Scenario & Redline Guidance\n\n");
+    if (audit->certified != UINT32_C(0)) {
+        fprintf(fp,
+                "All `%u` clauses and `%u` cross-references satisfy consumer immunity, ambiguity "
+                "elimination, reciprocity bounds, and `benefit_drift <= 0`.\n",
+                (unsigned)spec->num_clauses, (unsigned)spec->num_edges);
+    } else {
+        fprintf(
+            fp,
+            "Under legal institutional play, the counterparty can combine `%u` predatory "
+            "clause(s) and `%u` malicious cross-reference edge(s) to push exposure up to `%llu`:\n\n",
+            (unsigned)audit->num_predatory_clauses, (unsigned)audit->num_malicious_edges,
+            (unsigned long long)audit->worst_case_loss);
+        for (uint32_t i = 0U; i < n; i++) {
+            uint32_t vm = audit->clause_viol_masks[i];
+            if (vm != UINT32_C(0)) {
+                fprintf(fp, "- **REDLINE REMOVE Clause #%u**: flags=`0x%03x`",
+                        (unsigned)spec->clauses[i].clause_id, (unsigned)vm);
+                if ((vm & (uint32_t)SOUND_CVIOL_IMMUNITY_BREACH) != 0U) {
+                    fprintf(fp, " [pierces protected consumer immunity]");
+                }
+                if ((vm & (uint32_t)SOUND_CVIOL_UNINFORMED_AMBIG) != 0U) {
+                    fprintf(fp, " [undefined/conflicting B4 obligation]");
+                }
+                if ((vm & (uint32_t)SOUND_CVIOL_PRESUP_SMUGGLE) != 0U) {
+                    fprintf(fp, " [undisclosed cost fine print]");
+                }
+                if ((vm & (uint32_t)SOUND_CVIOL_CHISHOLM_CASCADE) != 0U) {
+                    fprintf(fp, " [default acceleration trap]");
+                }
+                if ((vm & (uint32_t)SOUND_CVIOL_UNCONSCIONABLE) != 0U) {
+                    fprintf(fp, " [unconscionable penalty asymmetry]");
+                }
+                if ((vm & (uint32_t)SOUND_CVIOL_EXIT_TRAP) != 0U) {
+                    fprintf(fp, " [excessive exit penalty]");
+                }
+                fprintf(fp, " (worst contribution `%llu`)\n",
+                        (unsigned long long)(spec->clauses[i].base_loss +
+                                             spec->clauses[i].extra_drift));
+            }
+        }
+        if ((audit->viol_flags & (uint32_t)SOUND_CVIOL_GRAPH_BYPASS) != 0U) {
+            fprintf(fp,
+                    "- **REDLINE SEVER Bypass Path**: Cross-clause override/delegation bypass "
+                    "reaches protected clause bitmask `0x%x`.\n",
+                    (unsigned)audit->graph_bypass_mask);
+        }
+        if ((audit->viol_flags & (uint32_t)SOUND_CVIOL_GRAPH_SHEAF_H1) != 0U) {
+            fprintf(fp,
+                    "- **REDLINE RESOLVE Annex Contradiction (`H^1 != 0`)**: Global interpretation "
+                    "obstructed across cross-clause overrides.\n");
+        }
+        if ((audit->viol_flags & (uint32_t)SOUND_CVIOL_GRAPH_CASCADE) != 0U) {
+            fprintf(fp, "- **REDLINE SEVER Default Trigger Edge**: Cross-clause default trigger "
+                        "amplifies consumer exposure.\n");
+        }
+        for (uint32_t ei = 0U; ei < ne; ei++) {
+            const sound_contract_edge_t *e = &spec->edges[ei];
+            bool benign = (e->edge_kind == (uint8_t)SOUND_EDGE_REDIRECT) &&
+                          ((e->cocycle_shift & UINT8_C(3)) == UINT8_C(0)) &&
+                          (e->extra_exposure == UINT64_C(0));
+            if (!benign) {
+                fprintf(fp,
+                        "  - Malicious Edge `clause[%u] -> clause[%u]`: kind=`%s`, shift=`%u`, "
+                        "extra_exposure=`%llu`\n",
+                        (unsigned)e->src, (unsigned)e->dst, sound_cert_edge_kind_lean(e->edge_kind),
+                        (unsigned)(e->cocycle_shift & UINT8_C(3)),
+                        (unsigned long long)e->extra_exposure);
+            }
+        }
+        fprintf(fp,
+                "\n- **Minimal Repair Outcome**: Removing marked clauses/edges & gaps -> "
+                "repaired worst-case loss `%llu` (`repaired_certified=%u`)\n",
+                (unsigned long long)audit->repaired_worst_loss,
+                (unsigned)audit->repaired_certified);
+    }
     fclose(fp);
     return true;
 }

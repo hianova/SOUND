@@ -613,6 +613,40 @@ def build_sound_mutants() -> list[SoundMutant]:
             "            c_viol |= (uint32_t)SOUND_CVIOL_CHISHOLM_CASCADE;\n"
             "        }",
         ),
+        # --- 17. contract_graph_coverage (3) ---
+        SoundMutant(
+            "M49_contract_drop_graph_bypass",
+            "contract_graph_coverage",
+            "    if (out->graph_bypass_mask != UINT32_C(0)) {\n"
+            "        out->viol_flags |= (uint32_t)SOUND_CVIOL_GRAPH_BYPASS;\n"
+            "    }",
+            "    if (out->graph_bypass_mask != UINT32_C(0) && false) {\n"
+            "        out->viol_flags |= (uint32_t)SOUND_CVIOL_GRAPH_BYPASS;\n"
+            "    }",
+        ),
+        SoundMutant(
+            "M50_contract_drop_graph_sheaf_h1",
+            "contract_graph_coverage",
+            "            if (vis[e->src] == UINT8_C(0) || vis[e->dst] == UINT8_C(0) || diff != sh) {\n"
+            "                out->graph_sheaf_h1_obstructed = UINT32_C(1);\n"
+            "                out->viol_flags |= (uint32_t)SOUND_CVIOL_GRAPH_SHEAF_H1;\n"
+            "            }",
+            "            if ((vis[e->src] == UINT8_C(0) || vis[e->dst] == UINT8_C(0) || diff != sh) &&\n"
+            "                false) {\n"
+            "                out->graph_sheaf_h1_obstructed = UINT32_C(1);\n"
+            "                out->viol_flags |= (uint32_t)SOUND_CVIOL_GRAPH_SHEAF_H1;\n"
+            "            }",
+        ),
+        SoundMutant(
+            "M51_contract_drop_coverage_gap",
+            "contract_graph_coverage",
+            "    if (spec->coverage_gaps != UINT32_C(0)) {\n"
+            "        out->viol_flags |= (uint32_t)SOUND_CVIOL_COVERAGE_GAP;\n"
+            "    }",
+            "    if (spec->coverage_gaps != UINT32_C(0) && false) {\n"
+            "        out->viol_flags |= (uint32_t)SOUND_CVIOL_COVERAGE_GAP;\n"
+            "    }",
+        ),
     ]
 
 

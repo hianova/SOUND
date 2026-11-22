@@ -588,6 +588,7 @@ void sound_hunt_presup_filter(uint64_t seed, sound_presup_witness_t *out);
 /* ---- Pillar 5: Asymmetric Contract Informed-Consent & Benefit-Drift Verifier ---- */
 
 #define SOUND_CONTRACT_MAX_CLAUSES 32U
+#define SOUND_CONTRACT_MAX_EDGES   32U
 
 typedef enum {
     SOUND_CLAUSE_BASE_FEE = 0U,
@@ -599,6 +600,13 @@ typedef enum {
 } sound_clause_kind_t;
 
 typedef enum {
+    SOUND_EDGE_OVERRIDE = 0U,
+    SOUND_EDGE_REDIRECT = 1U,
+    SOUND_EDGE_POWER_DELEGATE = 2U,
+    SOUND_EDGE_DEFAULT_TRIGGER = 3U
+} sound_edge_kind_t;
+
+typedef enum {
     SOUND_CVIOL_NONE = 0U,
     SOUND_CVIOL_IMMUNITY_BREACH = (1U << 0U),
     SOUND_CVIOL_BENEFIT_DRIFT = (1U << 1U),
@@ -607,8 +615,21 @@ typedef enum {
     SOUND_CVIOL_CHISHOLM_CASCADE = (1U << 4U),
     SOUND_CVIOL_UNCONSCIONABLE = (1U << 5U),
     SOUND_CVIOL_SHEAF_CONFLICT = (1U << 6U),
-    SOUND_CVIOL_EXIT_TRAP = (1U << 7U)
+    SOUND_CVIOL_EXIT_TRAP = (1U << 7U),
+    SOUND_CVIOL_GRAPH_BYPASS = (1U << 8U),
+    SOUND_CVIOL_GRAPH_SHEAF_H1 = (1U << 9U),
+    SOUND_CVIOL_GRAPH_CASCADE = (1U << 10U),
+    SOUND_CVIOL_COVERAGE_GAP = (1U << 11U)
 } sound_contract_viol_t;
+
+typedef struct {
+    uint32_t src;
+    uint32_t dst;
+    uint8_t edge_kind;
+    uint8_t cocycle_shift;
+    uint16_t reserved;
+    uint64_t extra_exposure;
+} sound_contract_edge_t;
 
 typedef struct {
     uint32_t clause_id;
@@ -632,8 +653,11 @@ typedef struct {
     uint64_t max_asym_num;
     uint64_t max_asym_den;
     uint32_t num_clauses;
+    uint32_t num_edges;
+    uint32_t coverage_gaps;
     uint32_t reserved;
     sound_contract_clause_t clauses[SOUND_CONTRACT_MAX_CLAUSES];
+    sound_contract_edge_t edges[SOUND_CONTRACT_MAX_EDGES];
 } sound_contract_spec_t;
 
 typedef struct {
@@ -641,7 +665,12 @@ typedef struct {
     uint32_t viol_flags;
     uint32_t num_predatory_clauses;
     uint32_t repaired_certified;
+    uint32_t num_malicious_edges;
+    uint32_t graph_sheaf_h1_obstructed;
+    uint32_t graph_bypass_mask;
+    uint32_t reserved;
     uint64_t base_loss_sum;
+    uint64_t edge_exposure_sum;
     uint64_t worst_case_loss;
     int64_t benefit_drift;
     uint64_t max_exit_seen;
@@ -654,6 +683,8 @@ typedef struct {
 void sound_audit_contract(const sound_contract_spec_t *spec, sound_contract_audit_t *out);
 void sound_hunt_contract_drift(uint64_t seed, sound_contract_spec_t *spec_out,
                                sound_contract_audit_t *audit_out);
+void sound_hunt_contract_loophole(uint64_t seed, sound_contract_spec_t *spec_out,
+                                  sound_contract_audit_t *audit_out);
 
 #ifdef __cplusplus
 }

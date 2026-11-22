@@ -1515,6 +1515,88 @@ static uint32_t sound_test_t19_contract_drift(void) {
     return fails;
 }
 
+static uint32_t sound_test_t20_compositional_loophole(void) {
+    uint32_t fails = UINT32_C(0);
+    static sound_contract_spec_t spec;
+    static sound_contract_audit_t audit;
+
+    /* 1. Gauge-trivial Z4 cycle (1 + 2 + 1 = 4 = 0 mod 4) + benign redirects -> CERTIFIED */
+    sound_zero_bytes(&spec, sizeof(spec));
+    spec.max_loss_cap = UINT64_C(10000);
+    spec.max_exit_fee = UINT64_C(2000);
+    spec.protected_mask = UINT64_C(0x1);
+    spec.max_asym_num = UINT64_C(2);
+    spec.max_asym_den = UINT64_C(1);
+    spec.num_clauses = 3U;
+    for (uint32_t i = 0U; i < 3U; i++) {
+        spec.clauses[i].clause_id = i + 1U;
+        spec.clauses[i].kind = (uint8_t)SOUND_CLAUSE_BASE_FEE;
+        spec.clauses[i].disclosed = UINT8_C(1);
+        spec.clauses[i].b4_truth = (uint8_t)SOUND_B4_TRUE;
+        spec.clauses[i].base_loss = UINT64_C(2000);
+        spec.clauses[i].exit_fee = UINT64_C(500);
+        spec.clauses[i].cons_penalty = UINT64_C(100);
+        spec.clauses[i].inst_penalty = UINT64_C(100);
+    }
+    spec.clauses[0].target_mask = UINT64_C(0x1);
+    spec.num_edges = 3U;
+    spec.edges[0].src = 0U;
+    spec.edges[0].dst = 1U;
+    spec.edges[0].edge_kind = (uint8_t)SOUND_EDGE_REDIRECT;
+    spec.edges[0].cocycle_shift = UINT8_C(1);
+    spec.edges[1].src = 1U;
+    spec.edges[1].dst = 2U;
+    spec.edges[1].edge_kind = (uint8_t)SOUND_EDGE_REDIRECT;
+    spec.edges[1].cocycle_shift = UINT8_C(2);
+    spec.edges[2].src = 2U;
+    spec.edges[2].dst = 0U;
+    spec.edges[2].edge_kind = (uint8_t)SOUND_EDGE_REDIRECT;
+    spec.edges[2].cocycle_shift = UINT8_C(1);
+    sound_audit_contract(&spec, &audit);
+    if (audit.certified != UINT32_C(1) || audit.graph_sheaf_h1_obstructed != UINT32_C(0) ||
+        audit.graph_bypass_mask != UINT32_C(0) || audit.viol_flags != UINT32_C(0)) {
+        fails++;
+    }
+
+    /* 2. Mobius Z4 loop (1+1+1 = 3 mod 4) + 2-hop power_delegate -> redirect bypass */
+    spec.edges[1].edge_kind = (uint8_t)SOUND_EDGE_POWER_DELEGATE;
+    spec.edges[1].cocycle_shift = UINT8_C(1);
+    sound_audit_contract(&spec, &audit);
+    if (audit.certified != UINT32_C(0) || audit.num_predatory_clauses != UINT32_C(0) ||
+        audit.graph_sheaf_h1_obstructed != UINT32_C(1) ||
+        (audit.viol_flags & (uint32_t)SOUND_CVIOL_GRAPH_SHEAF_H1) == UINT32_C(0) ||
+        (audit.viol_flags & (uint32_t)SOUND_CVIOL_GRAPH_BYPASS) == UINT32_C(0) ||
+        (audit.graph_bypass_mask & UINT32_C(1)) == UINT32_C(0) ||
+        audit.repaired_certified != UINT32_C(1)) {
+        fails++;
+    }
+
+    /* 3. Default trigger edge + coverage gaps fail closed */
+    spec.edges[0].edge_kind = (uint8_t)SOUND_EDGE_DEFAULT_TRIGGER;
+    spec.edges[0].cocycle_shift = UINT8_C(0);
+    spec.edges[0].extra_exposure = UINT64_C(6000);
+    spec.coverage_gaps = 2U;
+    sound_audit_contract(&spec, &audit);
+    if (audit.certified != UINT32_C(0) ||
+        (audit.viol_flags & (uint32_t)SOUND_CVIOL_GRAPH_CASCADE) == UINT32_C(0) ||
+        (audit.viol_flags & (uint32_t)SOUND_CVIOL_COVERAGE_GAP) == UINT32_C(0) ||
+        audit.edge_exposure_sum != UINT64_C(6000) || audit.benefit_drift <= (int64_t)0 ||
+        audit.repaired_certified != UINT32_C(1)) {
+        fails++;
+    }
+
+    /* 4. Compositional loophole hunt witness + FIR gate */
+    sound_hunt_contract_loophole(UINT64_C(0x42), &spec, &audit);
+    if (audit.certified != UINT32_C(0) || audit.num_predatory_clauses != UINT32_C(0) ||
+        audit.repaired_certified != UINT32_C(1) || audit.graph_sheaf_h1_obstructed != UINT32_C(1) ||
+        audit.graph_bypass_mask == UINT32_C(0) || audit.edge_exposure_sum != UINT64_C(5000) ||
+        audit.benefit_drift <= (int64_t)0 ||
+        !sound_cert_emit_contract_fir(&audit, NULL, &g_cert_ws) || !g_cert_ws.ir_eval_ok) {
+        fails++;
+    }
+    return fails;
+}
+
 /* ============================================================================
  * File I/O & CLI Commands
  * ============================================================================ */
@@ -1591,7 +1673,7 @@ static void sound_derive_prog_name(char dst[24], const char *path) {
 static SoundArena g_cli_arena;
 
 static int sound_cmd_selftest(void) {
-    uint32_t f[19];
+    uint32_t f[20];
     f[0] = sound_test_t1_kernel();
     f[1] = sound_test_t2_hohfeld_and_rollback();
     f[2] = sound_test_t3_frontend_gate();
@@ -1611,21 +1693,22 @@ static int sound_cmd_selftest(void) {
     f[16] = sound_test_t17_vendler_aspect();
     f[17] = sound_test_t18_projection_and_forces();
     f[18] = sound_test_t19_contract_drift();
+    f[19] = sound_test_t20_compositional_loophole();
 
     uint32_t tot = UINT32_C(0);
-    for (uint32_t i = 0U; i < 19U; i++) {
+    for (uint32_t i = 0U; i < 20U; i++) {
         tot += f[i];
     }
     printf("[selftest] T1..T10(kernel)=%s T11(bilat)=%s T12(paradox)=%s T13(sheaf_cls)=%s "
            "T14(sheaf_h1)=%s T15(hohfeld_v4)=%s T16(chisholm_trap)=%s T17(aspect)=%s "
-           "T18(presup_force)=%s T19(contract)=%s | fails=%u\n",
+           "T18(presup_force)=%s T19(contract)=%s T20(loophole)=%s | fails=%u\n",
            (f[0] + f[1] + f[2] + f[3] + f[4] + f[5] + f[6] + f[7] + f[8] + f[9]) == 0U ? "PASS"
                                                                                        : "FAIL",
            f[10] == 0U ? "PASS" : "FAIL", f[11] == 0U ? "PASS" : "FAIL",
            f[12] == 0U ? "PASS" : "FAIL", f[13] == 0U ? "PASS" : "FAIL",
            f[14] == 0U ? "PASS" : "FAIL", f[15] == 0U ? "PASS" : "FAIL",
            f[16] == 0U ? "PASS" : "FAIL", f[17] == 0U ? "PASS" : "FAIL",
-           f[18] == 0U ? "PASS" : "FAIL", tot);
+           f[18] == 0U ? "PASS" : "FAIL", f[19] == 0U ? "PASS" : "FAIL", tot);
     return (tot == 0U) ? 0 : 1;
 }
 
@@ -2075,6 +2158,28 @@ static int sound_cmd_hunt(int argc, char **argv) {
                audit.repaired_certified, (unsigned long long)audit.merkle, g_cert_ws.wire_len);
         return 0;
     }
+    if (sound_cstr_eq(mode, "contract-loophole")) {
+        static sound_contract_spec_t spec;
+        static sound_contract_audit_t audit;
+        sound_hunt_contract_loophole(seed, &spec, &audit);
+        if (!sound_cert_emit_contract_fir(&audit, out_fir, &g_cert_ws)) {
+            return 1;
+        }
+        if (out_lean != NULL && !sound_cert_emit_contract_lean(&spec, &audit, out_lean)) {
+            return 1;
+        }
+        if (out_json != NULL &&
+            !sound_cert_emit_contract_json(&spec, &audit, &g_cert_ws, out_json)) {
+            return 1;
+        }
+        printf("[hunt contract-loophole] cert=%u pred=%u edges=%u sheaf_h1=%u bypass=0x%x "
+               "drift=%lld rep_cert=%u merkle=0x%016llx fir=%zuB\n",
+               audit.certified, audit.num_predatory_clauses, spec.num_edges,
+               audit.graph_sheaf_h1_obstructed, audit.graph_bypass_mask,
+               (long long)audit.benefit_drift, audit.repaired_certified,
+               (unsigned long long)audit.merkle, g_cert_ws.wire_len);
+        return 0;
+    }
     fprintf(stderr, "ERROR: unknown hunt mode '%s'\n", mode);
     return 1;
 }
@@ -2322,6 +2427,27 @@ static uint8_t sound_parse_b4_token(const char *p, const char *end) {
     return (uint8_t)SOUND_B4_TRUE;
 }
 
+static uint8_t sound_parse_edge_kind_token(const char *p, const char *end) {
+    char s[40];
+    if (sound_json_read_str_val(p, end, s, sizeof(s))) {
+        if (sound_cstr_eq(s, "override")) {
+            return (uint8_t)SOUND_EDGE_OVERRIDE;
+        }
+        if (sound_cstr_eq(s, "power_delegate") || sound_cstr_eq(s, "powerDelegate")) {
+            return (uint8_t)SOUND_EDGE_POWER_DELEGATE;
+        }
+        if (sound_cstr_eq(s, "default_trigger") || sound_cstr_eq(s, "defaultTrigger")) {
+            return (uint8_t)SOUND_EDGE_DEFAULT_TRIGGER;
+        }
+        return (uint8_t)SOUND_EDGE_REDIRECT;
+    }
+    uint64_t v = UINT64_C(1);
+    if (sound_json_parse_u64_val(p, end, &v) && v <= UINT64_C(3)) {
+        return (uint8_t)v;
+    }
+    return (uint8_t)SOUND_EDGE_REDIRECT;
+}
+
 static bool sound_parse_contract_json_file(const char *path, sound_contract_spec_t *spec) {
     static char json_buf[32768];
     if (path == NULL || spec == NULL) {
@@ -2368,6 +2494,9 @@ static bool sound_parse_contract_json_file(const char *path, sound_contract_spec
     }
     if (sound_json_parse_u64_val(sound_json_obj_get(root, end, "max_asym_den"), end, &tmp)) {
         spec->max_asym_den = tmp;
+    }
+    if (sound_json_parse_u64_val(sound_json_obj_get(root, end, "coverage_gaps"), end, &tmp)) {
+        spec->coverage_gaps = (uint32_t)tmp;
     }
 
     const char *arr = sound_json_obj_get(root, end, "clauses");
@@ -2439,6 +2568,52 @@ static bool sound_parse_contract_json_file(const char *path, sound_contract_spec
         spec->num_clauses++;
         cur = c_end;
     }
+
+    const char *earr = sound_json_obj_get(root, end, "edges");
+    if (earr != NULL && *earr == '[') {
+        const char *earr_end = sound_json_skip_value(earr, end);
+        const char *ecur = earr + 1;
+        while (ecur < earr_end) {
+            ecur = sound_json_skip_ws(ecur, earr_end);
+            if (ecur >= earr_end || *ecur == ']') {
+                break;
+            }
+            if (*ecur == ',') {
+                ecur++;
+                continue;
+            }
+            if (*ecur != '{') {
+                return false;
+            }
+            const char *e_end = sound_json_skip_value(ecur, earr_end);
+            if (spec->num_edges >= SOUND_CONTRACT_MAX_EDGES) {
+                spec->num_edges++;
+                break;
+            }
+            sound_contract_edge_t *ed = &spec->edges[spec->num_edges];
+            ed->edge_kind = (uint8_t)SOUND_EDGE_REDIRECT;
+            if (sound_json_parse_u64_val(sound_json_obj_get(ecur, e_end, "src"), e_end, &tmp)) {
+                ed->src = (uint32_t)tmp;
+            }
+            if (sound_json_parse_u64_val(sound_json_obj_get(ecur, e_end, "dst"), e_end, &tmp)) {
+                ed->dst = (uint32_t)tmp;
+            }
+            const char *ek = sound_json_obj_get(ecur, e_end, "edge_kind");
+            if (ek != NULL) {
+                ed->edge_kind = sound_parse_edge_kind_token(ek, e_end);
+            }
+            if (sound_json_parse_u64_val(sound_json_obj_get(ecur, e_end, "cocycle_shift"), e_end,
+                                         &tmp)) {
+                ed->cocycle_shift = (uint8_t)(tmp & UINT64_C(3));
+            }
+            if (sound_json_parse_u64_val(sound_json_obj_get(ecur, e_end, "extra_exposure"), e_end,
+                                         &tmp)) {
+                ed->extra_exposure = tmp;
+            }
+            spec->num_edges++;
+            ecur = e_end;
+        }
+    }
     return spec->num_clauses > UINT32_C(0);
 }
 
@@ -2447,6 +2622,7 @@ static int sound_cmd_audit_contract(int argc, char **argv) {
     const char *out_lean = sound_parse_opt(argc, argv, 3, "--out-lean");
     const char *out_fir = sound_parse_opt(argc, argv, 3, "--out-fir");
     const char *out_json = sound_parse_opt(argc, argv, 3, "--out-json");
+    const char *out_receipt = sound_parse_opt(argc, argv, 3, "--out-receipt");
 
     static sound_contract_spec_t spec;
     static sound_contract_audit_t audit;
@@ -2467,28 +2643,32 @@ static int sound_cmd_audit_contract(int argc, char **argv) {
         fprintf(stderr, "ERROR: unable to write '%s'\n", out_json);
         return 1;
     }
-    printf("[audit-contract] %s | verdict=%s viol=0x%x base=%llu worst=%llu drift=%lld "
-           "pred=%u rep_cert=%u fir=%zuB\n",
+    if (out_receipt != NULL && !sound_cert_emit_contract_receipt(&spec, &audit, out_receipt)) {
+        fprintf(stderr, "ERROR: unable to write '%s'\n", out_receipt);
+        return 1;
+    }
+    printf("[audit-contract] %s | verdict=%s viol=0x%x base=%llu edge_exp=%llu worst=%llu "
+           "drift=%lld pred=%u mal_edges=%u sheaf_h1=%u bypass=0x%x rep_cert=%u fir=%zuB\n",
            in_json, (audit.certified != UINT32_C(0)) ? "CERTIFIED" : "VETOED", audit.viol_flags,
-           (unsigned long long)audit.base_loss_sum, (unsigned long long)audit.worst_case_loss,
-           (long long)audit.benefit_drift, audit.num_predatory_clauses, audit.repaired_certified,
-           g_cert_ws.wire_len);
+           (unsigned long long)audit.base_loss_sum, (unsigned long long)audit.edge_exposure_sum,
+           (unsigned long long)audit.worst_case_loss, (long long)audit.benefit_drift,
+           audit.num_predatory_clauses, audit.num_malicious_edges, audit.graph_sheaf_h1_obstructed,
+           audit.graph_bypass_mask, audit.repaired_certified, g_cert_ws.wire_len);
     return 0;
 }
 
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr,
-                "Usage:\n  sound selftest\n  sound verify <arena.snd> [--json]\n"
-                "  sound repair <arena.snd> [seed]\n"
-                "  sound lift-fir <arena.snd> <out.fir> [--repaired [seed]]\n"
-                "  sound lift-policy-fir <arena.snd> <out.fir>\n"
-                "  sound classify-<bilattice|sheaf|hohfeld|projection> [--out-json <p>]\n"
-                "  sound hunt <paradox-min|sheaf-h1|chisholm|norm-trap|aspect-firewall|"
-                "presup-filter|contract-drift> [--seed <u64>] [--out-lean <p>] [--out-fir <p>] "
-                "[--out-json <p>]\n"
-                "  sound audit-contract <contract.json> [--out-lean <p>] [--out-fir <p>] "
-                "[--out-json <p>]\n");
+        fprintf(stderr, "Usage:\n  sound selftest\n  sound verify <arena.snd> [--json]\n"
+                        "  sound repair <arena.snd> [seed]\n"
+                        "  sound lift-fir <arena.snd> <out.fir> [--repaired [seed]]\n"
+                        "  sound lift-policy-fir <arena.snd> <out.fir>\n"
+                        "  sound classify-<bilattice|sheaf|hohfeld|projection> [--out-json <p>]\n"
+                        "  sound hunt <paradox-min|sheaf-h1|chisholm|norm-trap|aspect-firewall|"
+                        "presup-filter|contract-drift|contract-loophole> [--seed <u64>] "
+                        "[--out-lean <p>] [--out-fir <p>] [--out-json <p>]\n"
+                        "  sound audit-contract <contract.json> [--out-lean <p>] [--out-fir <p>] "
+                        "[--out-json <p>] [--out-receipt <p>]\n");
         return 1;
     }
     if (sound_cstr_eq(argv[1], "selftest")) {

@@ -1,0 +1,76 @@
+{
+  "contract_name": "Compositional_Annex_Loophole_Predatory_2026",
+  "seed": "0x414E4E45585F3031",
+  "max_loss_cap": 10000,
+  "max_exit_fee": 2000,
+  "protected_mask": 1,
+  "max_asym_num": 2,
+  "max_asym_den": 1,
+  "clauses": [
+    {
+      "clause_id": 1,
+      "title": "Main body Sec. 3: Capital protection core guarantee (individually clean)",
+      "kind": "base_fee",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 1,
+      "base_loss": 5000,
+      "extra_drift": 0,
+      "exit_fee": 500,
+      "cons_penalty": 100,
+      "inst_penalty": 100,
+      "sheaf_cycle": false
+    },
+    {
+      "clause_id": 2,
+      "title": "Sec. 18: Market-exception cross-reference (individually clean)",
+      "kind": "reciprocity",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 3000,
+      "extra_drift": 0,
+      "exit_fee": 500,
+      "cons_penalty": 100,
+      "inst_penalty": 100,
+      "sheaf_cycle": false
+    },
+    {
+      "clause_id": 3,
+      "title": "Annex II Rider: Administrative adjustment schedule (individually clean)",
+      "kind": "reciprocity",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 1000,
+      "extra_drift": 0,
+      "exit_fee": 500,
+      "cons_penalty": 100,
+      "inst_penalty": 100,
+      "sheaf_cycle": false
+    }
+  ],
+  "edges": [
+    {
+      "src": 0,
+      "dst": 1,
+      "edge_kind": "redirect",
+      "cocycle_shift": 1,
+      "extra_exposure": 0
+    },
+    {
+      "src": 1,
+      "dst": 2,
+      "edge_kind": "power_delegate",
+      "cocycle_shift": 1,
+      "extra_exposure": 0
+    },
+    {
+      "src": 2,
+      "dst": 0,
+      "edge_kind": "override",
+      "cocycle_shift": 1,
+      "extra_exposure": 8000
+    }
+  ]
+}

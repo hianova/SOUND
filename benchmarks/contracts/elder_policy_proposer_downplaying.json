@@ -1,0 +1,55 @@
+{
+  "contract_name": "Elder_ZH_Proposer_Semantic_Downplay",
+  "max_loss_cap": 18000,
+  "max_exit_fee": 1500,
+  "protected_mask": 1,
+  "max_asym_num": 2,
+  "max_asym_den": 1,
+  "clauses": [
+    {
+      "clause_id": 1,
+      "source_span": [
+        0,
+        51
+      ],
+      "kind": "base_fee",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "base_loss": 5000,
+      "exit_fee": 1500,
+      "cons_penalty": 500,
+      "inst_penalty": 500
+    },
+    {
+      "clause_id": 2,
+      "source_span": [
+        52,
+        81
+      ],
+      "kind": "reciprocity",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 1,
+      "base_loss": 0,
+      "exit_fee": 500,
+      "cons_penalty": 500,
+      "inst_penalty": 500
+    },
+    {
+      "clause_id": 3,
+      "source_span": [
+        82,
+        145
+      ],
+      "kind": "base_fee",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 0,
+      "extra_drift": 0,
+      "exit_fee": 0,
+      "cons_penalty": 0,
+      "inst_penalty": 0
+    }
+  ]
+}
