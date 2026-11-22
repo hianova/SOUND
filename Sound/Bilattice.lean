@@ -842,4 +842,332 @@ theorem chart_glue_monotone_bind_bv64
   unfold chartGlueValidBV64 at hGlue
   bv_decide
 
+/-! ## Pillar 1 Pure Theory: Belnap FOUR Algebra & Odd-Cycle Classical No-Go -/
+
+abbrev B4 := BitVec 2
+
+def b4Bot   : B4 := 0#2
+def b4False : B4 := 1#2
+def b4True  : B4 := 2#2
+def b4Top   : B4 := 3#2
+
+def b4Neg (x : B4) : B4 :=
+  ((x &&& 2#2) >>> 1) ||| ((x &&& 1#2) <<< 1)
+
+def b4Conf (x : B4) : B4 :=
+  (b4Neg x) ^^^ 3#2
+
+def b4AndT (x y : B4) : B4 :=
+  ((x &&& y) &&& 2#2) ||| ((x ||| y) &&& 1#2)
+
+def b4OrT (x y : B4) : B4 :=
+  ((x ||| y) &&& 2#2) ||| ((x &&& y) &&& 1#2)
+
+def b4AndK (x y : B4) : B4 :=
+  x &&& y
+
+def b4OrK (x y : B4) : B4 :=
+  x ||| y
+
+def b4LeT (x y : B4) : Bool :=
+  (((x &&& 2#2) &&& ~~~(y &&& 2#2)) == 0#2) &&
+  (((y &&& 1#2) &&& ~~~(x &&& 1#2)) == 0#2)
+
+def b4LeK (x y : B4) : Bool :=
+  (x &&& ~~~y) == 0#2
+
+/-- 47. Truth negation `b4Neg` is an exact involution on the 4-valued bilattice. -/
+theorem b4_neg_involutive (x : B4) : b4Neg (b4Neg x) = x := by
+  unfold b4Neg
+  bv_decide
+
+/-- 48. Knowledge conflation `b4Conf` is an exact involution on the 4-valued bilattice. -/
+theorem b4_conf_involutive (x : B4) : b4Conf (b4Conf x) = x := by
+  unfold b4Conf b4Neg
+  bv_decide
+
+/-- 49. Truth negation and knowledge conflation commute, generating a Klein `V4` symmetry. -/
+theorem b4_neg_conf_commute (x : B4) : b4Neg (b4Conf x) = b4Conf (b4Neg x) := by
+  unfold b4Conf b4Neg
+  bv_decide
+
+/-- 50. Truth negation obeys De Morgan dualities for truth meet. -/
+theorem b4_demorgan_truth_and (x y : B4) : b4Neg (b4AndT x y) = b4OrT (b4Neg x) (b4Neg y) := by
+  unfold b4Neg b4AndT b4OrT
+  bv_decide
+
+/-- 51. Truth negation obeys De Morgan dualities for truth join. -/
+theorem b4_demorgan_truth_or (x y : B4) : b4Neg (b4OrT x y) = b4AndT (b4Neg x) (b4Neg y) := by
+  unfold b4Neg b4AndT b4OrT
+  bv_decide
+
+/-- 52. Knowledge conflation obeys De Morgan dualities for knowledge meet. -/
+theorem b4_demorgan_conf_k_and (x y : B4) : b4Conf (b4AndK x y) = b4OrK (b4Conf x) (b4Conf y) := by
+  unfold b4Conf b4Neg b4AndK b4OrK
+  bv_decide
+
+/-- 53. Knowledge conflation obeys De Morgan dualities for knowledge join. -/
+theorem b4_demorgan_conf_k_or (x y : B4) : b4Conf (b4OrK x y) = b4AndK (b4Conf x) (b4Conf y) := by
+  unfold b4Conf b4Neg b4AndK b4OrK
+  bv_decide
+
+/-- 54. Truth meet is monotone with respect to the knowledge order `≤_k` (interlaced property). -/
+theorem b4_interlaced_andT_mono_k (x1 x2 y1 y2 : B4)
+    (hx : b4LeK x1 x2 = true) (hy : b4LeK y1 y2 = true) :
+    b4LeK (b4AndT x1 y1) (b4AndT x2 y2) = true := by
+  unfold b4LeK b4AndT at *
+  bv_decide
+
+/-- 55. Truth join is monotone with respect to the knowledge order `≤_k` (interlaced property). -/
+theorem b4_interlaced_orT_mono_k (x1 x2 y1 y2 : B4)
+    (hx : b4LeK x1 x2 = true) (hy : b4LeK y1 y2 = true) :
+    b4LeK (b4OrT x1 y1) (b4OrT x2 y2) = true := by
+  unfold b4LeK b4OrT at *
+  bv_decide
+
+/-- 56. Knowledge meet is monotone with respect to the truth order `≤_t` (interlaced property). -/
+theorem b4_interlaced_andK_mono_t (x1 x2 y1 y2 : B4)
+    (hx : b4LeT x1 x2 = true) (hy : b4LeT y1 y2 = true) :
+    b4LeT (b4AndK x1 y1) (b4AndK x2 y2) = true := by
+  unfold b4LeT b4AndK at *
+  bv_decide
+
+/-- 57. Knowledge join is monotone with respect to the truth order `≤_t` (interlaced property). -/
+theorem b4_interlaced_orK_mono_t (x1 x2 y1 y2 : B4)
+    (hx : b4LeT x1 x2 = true) (hy : b4LeT y1 y2 = true) :
+    b4LeT (b4OrK x1 y1) (b4OrK x2 y2) = true := by
+  unfold b4LeT b4OrK at *
+  bv_decide
+
+/-- 58. Truth negation reverses the truth order `≤_t` while strictly preserving knowledge `≤_k`. -/
+theorem b4_neg_reverses_t_preserves_k (x y : B4) :
+    (b4LeT x y = true → b4LeT (b4Neg y) (b4Neg x) = true) ∧
+    (b4LeK x y = true → b4LeK (b4Neg x) (b4Neg y) = true) := by
+  unfold b4LeT b4LeK b4Neg
+  bv_decide
+
+/-- 59. Conflation preserves the truth order `≤_t` while reversing the knowledge order `≤_k`. -/
+theorem b4_conf_preserves_t_reverses_k (x y : B4) :
+    (b4LeT x y = true → b4LeT (b4Conf x) (b4Conf y) = true) ∧
+    (b4LeK x y = true → b4LeK (b4Conf y) (b4Conf x) = true) := by
+  unfold b4LeT b4LeK b4Conf b4Neg
+  bv_decide
+
+/-- 60. Bilattice truth and knowledge operations distribute over each other. -/
+theorem b4_distributive_tk (x y z : B4) :
+    b4AndT x (b4OrK y z) = b4OrK (b4AndT x y) (b4AndT x z) := by
+  unfold b4AndT b4OrK
+  bv_decide
+
+def IsClassicalAttackModel {n : Nat} (atk : Fin n → Fin n → Bool) (val : Fin n → Bool) : Prop :=
+  ∀ u, val u = true ↔ ∀ v, atk v u = true → val v = false
+
+def oddCycleAtk (k : Nat) (u v : Fin (2 * k + 1)) : Bool :=
+  ((u.val + 1) % (2 * k + 1) == v.val)
+
+def evenCycleAtk (k : Nat) (u v : Fin (2 * (k + 1))) : Bool :=
+  ((u.val + 1) % (2 * (k + 1)) == v.val)
+
+private theorem oddCycle_step_flip (k : Nat) (val : Fin (2 * k + 1) → Bool)
+    (hModel : IsClassicalAttackModel (oddCycleAtk k) val)
+    (m : Nat) (hm : m + 1 < 2 * k + 1) :
+    val ⟨m + 1, hm⟩ = !(val ⟨m, Nat.lt_of_succ_lt hm⟩) := by
+  have hMod : (m + 1) % (2 * k + 1) = m + 1 := Nat.mod_eq_of_lt hm
+  have hAtk : oddCycleAtk k ⟨m, Nat.lt_of_succ_lt hm⟩ ⟨m + 1, hm⟩ = true := by
+    simp [oddCycleAtk, hMod]
+  have hIff := hModel ⟨m + 1, hm⟩
+  cases hv : val ⟨m, Nat.lt_of_succ_lt hm⟩
+  · have hAll : ∀ v : Fin (2 * k + 1), oddCycleAtk k v ⟨m + 1, hm⟩ = true → val v = false := by
+      intro v hvAtk
+      simp only [oddCycleAtk, beq_iff_eq] at hvAtk
+      have hvLt : v.val < 2 * k + 1 := v.isLt
+      have hvm : v.val = m := by
+        by_cases hWrap : v.val + 1 < 2 * k + 1
+        · rw [Nat.mod_eq_of_lt hWrap] at hvAtk
+          omega
+        · have hEq : v.val + 1 = 2 * k + 1 := by omega
+          rw [hEq, Nat.mod_self] at hvAtk
+          omega
+      have hSub : v = ⟨m, Nat.lt_of_succ_lt hm⟩ := Fin.ext hvm
+      rw [hSub, hv]
+    have hTrue : val ⟨m + 1, hm⟩ = true := hIff.mpr hAll
+    simp [hTrue]
+  · cases hNext : val ⟨m + 1, hm⟩
+    · rfl
+    · have hFalse := hIff.mp hNext ⟨m, Nat.lt_of_succ_lt hm⟩ hAtk
+      rw [hv] at hFalse
+      cases hFalse
+
+private theorem oddCycle_wrap_flip (k : Nat) (val : Fin (2 * k + 1) → Bool)
+    (hModel : IsClassicalAttackModel (oddCycleAtk k) val) :
+    val ⟨0, by omega⟩ = !(val ⟨2 * k, by omega⟩) := by
+  have hAtk : oddCycleAtk k ⟨2 * k, by omega⟩ ⟨0, by omega⟩ = true := by
+    simp [oddCycleAtk]
+  have hIff := hModel ⟨0, by omega⟩
+  cases hv : val ⟨2 * k, by omega⟩
+  · have hAll : ∀ v : Fin (2 * k + 1), oddCycleAtk k v ⟨0, by omega⟩ = true → val v = false := by
+      intro v hvAtk
+      simp only [oddCycleAtk, beq_iff_eq] at hvAtk
+      have hvLt : v.val < 2 * k + 1 := v.isLt
+      have hv2k : v.val = 2 * k := by
+        by_cases hWrap : v.val + 1 < 2 * k + 1
+        · rw [Nat.mod_eq_of_lt hWrap] at hvAtk
+          omega
+        · omega
+      have hSub : v = ⟨2 * k, by omega⟩ := Fin.ext hv2k
+      rw [hSub, hv]
+    have hTrue : val ⟨0, by omega⟩ = true := hIff.mpr hAll
+    exact hTrue
+  · cases h0 : val ⟨0, by omega⟩
+    · rfl
+    · have hFalse := hIff.mp h0 ⟨2 * k, by omega⟩ hAtk
+      rw [hv] at hFalse
+      cases hFalse
+
+private theorem oddCycle_parity (k : Nat) (val : Fin (2 * k + 1) → Bool)
+    (hModel : IsClassicalAttackModel (oddCycleAtk k) val) :
+    ∀ m (hm : m < 2 * k + 1),
+      val ⟨m, hm⟩ = if m % 2 == 0 then val ⟨0, by omega⟩ else !(val ⟨0, by omega⟩) := by
+  intro m
+  induction m with
+  | zero =>
+      intro _
+      simp
+  | succ m ih =>
+      intro hm
+      have hStep := oddCycle_step_flip k val hModel m hm
+      have hPrev := ih (Nat.lt_of_succ_lt hm)
+      rw [hStep, hPrev]
+      by_cases hEven : m % 2 = 0
+      · have hSucc : (m + 1) % 2 = 1 := by omega
+        simp [hEven, hSucc]
+      · have hOdd : m % 2 = 1 := by omega
+        have hSucc : (m + 1) % 2 = 0 := by omega
+        simp [hOdd, hSucc]
+
+/-- 61. Universal Odd-Cycle Classical 2-Valued No-Go Theorem:
+    For EVERY `k : Nat`, an unblocked directed cycle of length `2k + 1` admits ZERO
+    classical 2-valued total extension models, forcing 4-valued bilattice semantics. -/
+theorem odd_cycle_classical_nogo (k : Nat) (val : Fin (2 * k + 1) → Bool) :
+    ¬ IsClassicalAttackModel (oddCycleAtk k) val := by
+  intro hModel
+  have hPar := oddCycle_parity k val hModel (2 * k) (by omega)
+  have hEven : (2 * k) % 2 = 0 := by omega
+  simp only [hEven, beq_self_eq_true, ↓reduceIte] at hPar
+  have hWrap := oddCycle_wrap_flip k val hModel
+  rw [hPar] at hWrap
+  cases h0 : val ⟨0, by omega⟩
+  · simp only [Fin.zero_eta] at h0 hWrap
+    rw [h0] at hWrap
+    cases hWrap
+  · simp only [Fin.zero_eta] at h0 hWrap
+    rw [h0] at hWrap
+    cases hWrap
+
+private theorem evenCycle_mod_model (k : Nat) (b : Nat) (hb : b < 2) :
+    IsClassicalAttackModel (evenCycleAtk k) (fun i => i.val % 2 == b) := by
+  intro u
+  constructor
+  · intro hu v hvAtk
+    simp only [beq_iff_eq] at hu
+    simp only [evenCycleAtk, beq_iff_eq] at hvAtk
+    simp only [beq_eq_false_iff_ne, ne_eq]
+    have hvLt : v.val < 2 * (k + 1) := v.isLt
+    by_cases hWrap : v.val + 1 < 2 * (k + 1)
+    · rw [Nat.mod_eq_of_lt hWrap] at hvAtk
+      omega
+    · have hEq : v.val + 1 = 2 * (k + 1) := by omega
+      rw [hEq, Nat.mod_self] at hvAtk
+      have hvVal : v.val = 2 * k + 1 := by omega
+      have huVal : u.val = 0 := hvAtk.symm
+      omega
+  · intro hAll
+    simp only [beq_iff_eq]
+    let pVal := (u.val + (2 * k + 1)) % (2 * (k + 1))
+    let p : Fin (2 * (k + 1)) := ⟨pVal, Nat.mod_lt _ (by omega)⟩
+    have hpAtk : evenCycleAtk k p u = true := by
+      simp only [evenCycleAtk, p, pVal, beq_iff_eq]
+      have huLt : u.val < 2 * (k + 1) := u.isLt
+      by_cases h0 : u.val = 0
+      · have hP : (0 + (2 * k + 1)) % (2 * (k + 1)) = 2 * k + 1 := by
+          simpa using Nat.mod_eq_of_lt (show 2 * k + 1 < 2 * (k + 1) by omega)
+        rw [h0, hP]
+        have hSum : 2 * k + 1 + 1 = 2 * (k + 1) := by omega
+        rw [hSum, Nat.mod_self]
+      · have hMod : (u.val + (2 * k + 1)) % (2 * (k + 1)) = u.val - 1 := by
+          have hSum : u.val + (2 * k + 1) = (u.val - 1) + 2 * (k + 1) := by omega
+          rw [hSum, Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)]
+        rw [hMod]
+        have hBack : u.val - 1 + 1 = u.val := by omega
+        rw [hBack, Nat.mod_eq_of_lt huLt]
+    have hpFalse := hAll p hpAtk
+    simp only [beq_eq_false_iff_ne, ne_eq, p, pVal] at hpFalse
+    have huLt : u.val < 2 * (k + 1) := u.isLt
+    by_cases h0 : u.val = 0
+    · have hP : (0 + (2 * k + 1)) % (2 * (k + 1)) = 2 * k + 1 := by
+        simpa using Nat.mod_eq_of_lt (show 2 * k + 1 < 2 * (k + 1) by omega)
+      rw [h0, hP] at hpFalse
+      rw [h0]
+      omega
+    · have hMod : (u.val + (2 * k + 1)) % (2 * (k + 1)) = u.val - 1 := by
+        have hSum : u.val + (2 * k + 1) = (u.val - 1) + 2 * (k + 1) := by omega
+        rw [hSum, Nat.add_mod_right, Nat.mod_eq_of_lt (by omega)]
+      rw [hMod] at hpFalse
+      omega
+
+/-- 62. Even-Cycle Classical Phase Separation:
+    Every directed cycle of length `2(k + 1)` admits AT LEAST two distinct classical 2-valued models. -/
+theorem even_cycle_classical_two_models (k : Nat) :
+    ∃ (valA valB : Fin (2 * (k + 1)) → Bool),
+      IsClassicalAttackModel (evenCycleAtk k) valA ∧
+      IsClassicalAttackModel (evenCycleAtk k) valB ∧
+      valA ≠ valB := by
+  let valA : Fin (2 * (k + 1)) → Bool := fun i => i.val % 2 == 0
+  let valB : Fin (2 * (k + 1)) → Bool := fun i => i.val % 2 == 1
+  refine ⟨valA, valB, evenCycle_mod_model k 0 (by omega), evenCycle_mod_model k 1 (by omega), ?_⟩
+  intro hEq
+  have h0 := congrFun hEq ⟨0, by omega⟩
+  simp [valA, valB] at h0
+
+def cycle3Nodes : List GraphNode :=
+  [ { id := 0, tag := 1, rank := 2, bridge := true, inhibitors := [2] }
+  , { id := 1, tag := 1, rank := 2, bridge := true, inhibitors := [0] }
+  , { id := 2, tag := 1, rank := 2, bridge := true, inhibitors := [1] } ]
+
+/-- 63. While 3-cycles collapse classically, `SOUND`'s 4-valued bilattice stabilizes in an
+    exact mutual fixpoint `I* = []`, `P* = [0, 1, 2]` marking all 3 nodes as `.conflict`. -/
+theorem cycle3_bilattice_conflict_fixpoint :
+    evalIStar 3 cycle3Nodes = [] ∧
+    evalPStar 3 cycle3Nodes = [0, 1, 2] ∧
+    cycle3Nodes.map (evalNode 3 cycle3Nodes) = [.conflict, .conflict, .conflict] := by
+  decide
+
+/-- 64. Monotonicity vs. Defeasibility No-Go:
+    No monotone consequence operator can simultaneously support adding a new premise/norm
+    that retracts a previously entailed conclusion. -/
+theorem monotonicity_vs_defeasible_nogo
+    (F : (Nat → Bool) → (Nat → Bool))
+    (hMono : ∀ A B, (∀ x, A x = true → B x = true) → (∀ x, F A x = true → F B x = true))
+    (A B : Nat → Bool) (hSub : ∀ x, A x = true → B x = true) (u : Nat) :
+    ¬ (F A u = true ∧ F B u = false) := by
+  intro ⟨hFA, hFB⟩
+  have hTrue : F B u = true := hMono A B hSub u hFA
+  rw [hFB] at hTrue
+  cases hTrue
+
+def defeasibleBaseNodes : List GraphNode :=
+  [ { id := 0, tag := 1, rank := 2, bridge := true, inhibitors := [1] }
+  , { id := 1, tag := 1, rank := 2, bridge := true, disabled := true } ]
+
+def defeasibleRebuttedNodes : List GraphNode :=
+  [ { id := 0, tag := 1, rank := 2, bridge := true, inhibitors := [1] }
+  , { id := 1, tag := 1, rank := 2, bridge := true, disabled := false } ]
+
+/-- 65. Witness that `SOUND` escapes monotone limits: enabling attacker node `1` cleanly
+    retracts node `0` from `.accept` to `.reject`. -/
+theorem bilattice_defeasible_rebuttal_witness :
+    evalNode 3 defeasibleBaseNodes { id := 0, tag := 1, rank := 2, bridge := true, inhibitors := [1] } = .accept ∧
+    evalNode 3 defeasibleRebuttedNodes { id := 0, tag := 1, rank := 2, bridge := true, inhibitors := [1] } = .reject := by
+  decide
+
 end Sound.Bilattice

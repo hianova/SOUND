@@ -1,5 +1,6 @@
 #include "flow_ir.h"
 #include "sound.h"
+#include "sound_cert.h"
 
 #include <stdio.h>
 
@@ -7,7 +8,7 @@ typedef struct {
     uint64_t s;
 } sound_rng_t;
 
-static inline uint64_t sound_splitmix64(sound_rng_t *rng) {
+static uint64_t sound_splitmix64(sound_rng_t *rng) {
     uint64_t z = (rng->s += UINT64_C(0x9E3779B97F4A7C15));
     z = (z ^ (z >> 30U)) * UINT64_C(0xBF58476D1CE4E5B9);
     z = (z ^ (z >> 27U)) * UINT64_C(0x94D049BB133111EB);
@@ -142,16 +143,54 @@ static const char *sound_status_name(uint8_t st) {
 }
 
 static bool sound_eval_flags_ok(const SoundArena *arena) {
-    uint32_t req = SOUND_EVAL_FLAG_PARTITION_OK | SOUND_EVAL_FLAG_CONFLICT_FREE_OK |
-                   SOUND_EVAL_FLAG_HOHFELD_OK | SOUND_EVAL_FLAG_FIXPOINT_OK;
+    uint32_t req = (uint32_t)(SOUND_EVAL_FLAG_PARTITION_OK | SOUND_EVAL_FLAG_CONFLICT_FREE_OK |
+                              SOUND_EVAL_FLAG_HOHFELD_OK | SOUND_EVAL_FLAG_FIXPOINT_OK);
     return (arena->map.eval_out.eval_flags & req) == req;
 }
+
+static const char *sound_fiber_name(sound_fiber_t f) {
+    switch (f) {
+    case SOUND_FIBER_COMMITTED:
+        return "SOUND_FIBER_COMMITTED";
+    case SOUND_FIBER_FALLBACK_NULL:
+        return "SOUND_FIBER_FALLBACK_NULL";
+    case SOUND_FIBER_FALLBACK_BOUNDS:
+        return "SOUND_FIBER_FALLBACK_BOUNDS";
+    case SOUND_FIBER_FALLBACK_FORMAT:
+        return "SOUND_FIBER_FALLBACK_FORMAT";
+    case SOUND_FIBER_FALLBACK_MAC:
+        return "SOUND_FIBER_FALLBACK_MAC";
+    case SOUND_FIBER_HOLD_IMMUNITY:
+        return "SOUND_FIBER_HOLD_IMMUNITY";
+    case SOUND_FIBER_HOLD_NO_POWER:
+        return "SOUND_FIBER_HOLD_NO_POWER";
+    case SOUND_FIBER_HOLD_MISSING_CONTEXT:
+        return "SOUND_FIBER_HOLD_MISSING_CONTEXT";
+    case SOUND_FIBER_HOLD_INCOHERENT:
+        return "SOUND_FIBER_HOLD_INCOHERENT";
+    case SOUND_FIBER_FALLBACK_POLICY_TAMPER:
+        return "SOUND_FIBER_FALLBACK_POLICY_TAMPER";
+    case SOUND_FIBER_FALLBACK_CLARIFY:
+        return "SOUND_FIBER_FALLBACK_CLARIFY";
+    case SOUND_FIBER_FALLBACK_IRREALIS:
+        return "SOUND_FIBER_FALLBACK_IRREALIS";
+    case SOUND_FIBER_FALLBACK_SPAN:
+        return "SOUND_FIBER_FALLBACK_SPAN";
+    case SOUND_FIBER_FALLBACK_POLICY_VIOLATION:
+        return "SOUND_FIBER_FALLBACK_POLICY_VIOLATION";
+    default:
+        return "SOUND_FIBER_UNKNOWN";
+    }
+}
+
+/* ============================================================================
+ * T1..T10 Legacy Kernel & Security Gate Suites (Preserved 100%)
+ * ============================================================================ */
 
 static uint32_t sound_test_t1_kernel(void) {
     uint32_t fails = UINT32_C(0);
     SoundArena arena;
 
-    /* Case 1: uncorroborated hearsay + unverified presup */
     sound_arena_init(&arena);
     arena.map.img_hdr.num_nodes = 2U;
     sound_set_node(&arena, 0U, "wang_stopped", SOUND_SORT_FACTUAL, SOUND_EVID_REPORTATIVE,
@@ -166,7 +205,6 @@ static uint32_t sound_test_t1_kernel(void) {
         fails++;
     }
 
-    /* Case 3: Park rule — Sedan established, Ambulance defeated, E-Scooter penumbraOpen */
     sound_arena_init(&arena);
     arena.map.img_hdr.num_nodes = 5U;
     sound_set_node(&arena, 0U, "park_rule", SOUND_SORT_NORMATIVE, SOUND_EVID_ENACTED_NORM,
@@ -192,7 +230,6 @@ static uint32_t sound_test_t1_kernel(void) {
         fails++;
     }
 
-    /* Case 4: Two-Sided Hume Guillotine */
     sound_arena_init(&arena);
     arena.map.img_hdr.num_nodes = 6U;
     sound_set_node(&arena, 0U, "bloodstain", SOUND_SORT_FACTUAL, SOUND_EVID_DIRECT,
@@ -221,7 +258,6 @@ static uint32_t sound_test_t1_kernel(void) {
         fails++;
     }
 
-    /* Nixon Diamond + 3-Stage Burden Shifting */
     sound_arena_init(&arena);
     arena.map.img_hdr.num_nodes = 2U;
     sound_set_node(&arena, 0U, "quaker", SOUND_SORT_NORMATIVE, SOUND_EVID_ENACTED_NORM,
@@ -397,7 +433,6 @@ static uint32_t sound_test_t3_frontend_gate(void) {
         fails++;
     }
 
-    /* Zero-Trust Prepared-Statement Policy/Input Isolation (9 checks) */
     sound_arena_init(&arena);
     arena.map.img_hdr.num_nodes = 4U;
     arena.map.norm.immunity_mask = UINT64_C(0x4);
@@ -425,7 +460,6 @@ static uint32_t sound_test_t3_frontend_gate(void) {
     arena.map.forest_ctrl.utterance_bytes = 32U;
     arena.map.forest_ctrl.num_candidates = 1U;
 
-    /* 1. Misconfigured seal rejections */
     if (sound_policy_seal(&arena, UINT64_C(0x3), UINT64_C(0x2), UINT32_C(0)) !=
             SOUND_FIBER_HOLD_INCOHERENT ||
         sound_policy_seal(&arena, UINT64_C(0x1), UINT64_C(0x4), UINT32_C(0)) !=
@@ -440,7 +474,6 @@ static uint32_t sound_test_t3_frontend_gate(void) {
         fails++;
     }
 
-    /* 2. Injection block: Immunity slot (node 2) */
     arena.map.candidate[0].target_node = 2U;
     arena.map.candidate[0].force = (uint8_t)SOUND_FORCE_ASSERTION;
     arena.map.candidate[0].sort = (uint8_t)SOUND_SORT_FACTUAL;
@@ -462,7 +495,6 @@ static uint32_t sound_test_t3_frontend_gate(void) {
         fails++;
     }
 
-    /* 3. Injection block: Policy slot (node 0) */
     arena.map.candidate[0].target_node = 0U;
     if (sound_admit_forest(&arena, &admitted) != SOUND_FIBER_FALLBACK_POLICY_VIOLATION ||
         admitted != UINT32_MAX ||
@@ -472,7 +504,6 @@ static uint32_t sound_test_t3_frontend_gate(void) {
         fails++;
     }
 
-    /* 4. Injection block: Unbound slot (node 3) */
     arena.map.candidate[0].target_node = 3U;
     if (sound_admit_forest(&arena, &admitted) != SOUND_FIBER_FALLBACK_POLICY_VIOLATION ||
         admitted != UINT32_MAX ||
@@ -481,7 +512,6 @@ static uint32_t sound_test_t3_frontend_gate(void) {
         fails++;
     }
 
-    /* 5. Injection block: Cross-plane sort + privilege escalation on bind slot (node 1) */
     arena.map.candidate[0].target_node = 1U;
     arena.map.candidate[0].sort = (uint8_t)SOUND_SORT_INSTITUTIONAL;
     arena.map.candidate[0].evid = (uint8_t)SOUND_EVID_ENACTED_NORM;
@@ -496,7 +526,6 @@ static uint32_t sound_test_t3_frontend_gate(void) {
         fails++;
     }
 
-    /* 6. Injection block: Topology mutation on bind slot (node 1) */
     arena.map.candidate[0].sort = (uint8_t)SOUND_SORT_FACTUAL;
     arena.map.candidate[0].evid = (uint8_t)SOUND_EVID_SENSORY;
     arena.map.candidate[0].force = (uint8_t)SOUND_FORCE_ASSERTION;
@@ -509,7 +538,6 @@ static uint32_t sound_test_t3_frontend_gate(void) {
         fails++;
     }
 
-    /* 7. Injection block: NO_DIRECT_CLAIM enforcement on bind slot (node 1) */
     arena.map.candidate[0].attack_mask = UINT64_C(0);
     arena.map.candidate[0].evid = (uint8_t)SOUND_EVID_DIRECT;
     if (sound_admit_forest(&arena, &admitted) != SOUND_FIBER_FALLBACK_POLICY_VIOLATION ||
@@ -519,7 +547,6 @@ static uint32_t sound_test_t3_frontend_gate(void) {
         fails++;
     }
 
-    /* 8. Valid parameter binding & eval propagation + seal verification */
     arena.map.candidate[0].evid = (uint8_t)SOUND_EVID_SENSORY;
     arena.map.candidate[0].aspect = (uint8_t)SOUND_ASPECT_ACHIEVEMENT;
     arena.map.candidate[0].span_start = 2U;
@@ -538,7 +565,6 @@ static uint32_t sound_test_t3_frontend_gate(void) {
         fails++;
     }
 
-    /* 9. Post-seal policy tamper fail-closed */
     arena.map.node_clauses[0].clauses[0] = UINT64_C(0);
     sound_arena_seal(&arena);
     if (sound_policy_verify(&arena) != SOUND_FIBER_FALLBACK_POLICY_TAMPER ||
@@ -588,14 +614,12 @@ static uint32_t sound_test_t4_arena_merkle(void) {
         fails++;
     }
 
-    /* Bit flip in Arena tail must trigger SOUND_FIBER_FALLBACK_MAC */
     dst.cells[1].bytes[0] ^= UINT8_C(0x01);
     if (sound_arena_verify(&dst) != SOUND_FIBER_FALLBACK_MAC) {
         fails++;
     }
     dst.cells[1].bytes[0] ^= UINT8_C(0x01);
 
-    /* Bad magic and schema_hash must trigger SOUND_FIBER_FALLBACK_FORMAT */
     dst.map.img_hdr.magic ^= UINT32_C(1);
     if (sound_arena_verify(&dst) != SOUND_FIBER_FALLBACK_FORMAT) {
         fails++;
@@ -613,7 +637,6 @@ static uint32_t sound_test_t5_searu_repair(void) {
     uint32_t fails = UINT32_C(0);
     SoundArena arena;
 
-    /* 1. Nixon Diamond without Immunity pin: zero-energy maximal conflict-free extension */
     sound_arena_init(&arena);
     arena.map.img_hdr.num_nodes = 2U;
     sound_set_node(&arena, 0U, "quaker", SOUND_SORT_NORMATIVE, SOUND_EVID_ENACTED_NORM,
@@ -633,7 +656,6 @@ static uint32_t sound_test_t5_searu_repair(void) {
         fails++;
     }
 
-    /* 2. Nixon Diamond with Immunity pin on node 1 -> MUST keep node 1 and retract node 0 */
     arena.map.norm.immunity_mask = UINT64_C(0x2);
     if (sound_searu_repair_conflict(&arena, UINT64_C(0x53454152555F3032), 1024U) !=
             SOUND_FIBER_COMMITTED ||
@@ -643,7 +665,6 @@ static uint32_t sound_test_t5_searu_repair(void) {
         fails++;
     }
 
-    /* 3. Conflict-free graph (Case 3) -> zero iterations, preserves established nodes */
     sound_arena_init(&arena);
     arena.map.img_hdr.num_nodes = 5U;
     sound_set_node(&arena, 0U, "park_rule", SOUND_SORT_NORMATIVE, SOUND_EVID_ENACTED_NORM,
@@ -748,7 +769,6 @@ static uint32_t sound_test_t7_fir_lift(void) {
     flow_ir_prog_t prog;
     flow_ir_dag_stats_t dag;
 
-    /* 1. Lift Case 3 Park Rule (power=0x4, immunity=0x2, established=0x7) */
     sound_arena_init(&arena);
     arena.map.img_hdr.num_nodes = 5U;
     arena.map.norm.duty_pos_mask = UINT64_C(0x2);
@@ -780,7 +800,6 @@ static uint32_t sound_test_t7_fir_lift(void) {
         return UINT32_C(1);
     }
 
-    /* Immunity lock (bit 1) & No-Power lock (bit 0) prevent unauthorized mutation */
     {
         uint64_t inv[5] = {UINT64_C(0x2), UINT64_C(0), UINT64_C(0x1), UINT64_C(0), UINT64_C(0x2)};
         uint64_t outv[4] = {0};
@@ -789,7 +808,6 @@ static uint32_t sound_test_t7_fir_lift(void) {
             fails++;
         }
     }
-    /* Contradictory duty request on slot 2 rolls back */
     {
         uint64_t inv[5] = {UINT64_C(0x2), UINT64_C(0), UINT64_C(0x6), UINT64_C(0x4), UINT64_C(0)};
         uint64_t outv[4] = {0};
@@ -798,7 +816,6 @@ static uint32_t sound_test_t7_fir_lift(void) {
             fails++;
         }
     }
-    /* Valid grant on slot 2 + linear rescission consumption on slot 2 */
     {
         uint64_t inv_a[5] = {UINT64_C(0x2), UINT64_C(0), UINT64_C(0x6), UINT64_C(0), UINT64_C(0)};
         uint64_t out_a[4] = {0};
@@ -814,7 +831,6 @@ static uint32_t sound_test_t7_fir_lift(void) {
         }
     }
 
-    /* 2. Nixon Diamond repaired via SEARU lifted with SOUND_FIR_FLAG_USE_REPAIRED */
     sound_arena_init(&arena);
     arena.map.img_hdr.num_nodes = 2U;
     sound_set_node(&arena, 0U, "quaker", SOUND_SORT_NORMATIVE, SOUND_EVID_ENACTED_NORM,
@@ -843,8 +859,6 @@ static uint32_t sound_test_t7_fir_lift(void) {
 
 static uint32_t sound_test_t8_siphash_and_atomic_batch(void) {
     uint32_t fails = UINT32_C(0);
-    /* 1. Official SipHash-2-4 Aumasson-Bernstein 15-byte test vector:
-     *    key = 00..0f, msg = 00..0e -> tag = 0xa129ca6149be45e5ULL */
     uint8_t msg15[15];
     for (uint32_t i = 0U; i < 15U; i++) {
         msg15[i] = (uint8_t)i;
@@ -886,7 +900,6 @@ static uint32_t sound_test_t8_siphash_and_atomic_batch(void) {
         fails++;
     }
 
-    /* 2. Utterance span hash check + evid ceiling check */
     sound_zero_bytes(arena.map.candidate, sizeof(arena.map.candidate));
     arena.map.forest_ctrl.utterance_bytes = (uint32_t)(sizeof(utt) - 1U);
     arena.map.forest_ctrl.num_candidates = 1U;
@@ -896,7 +909,7 @@ static uint32_t sound_test_t8_siphash_and_atomic_batch(void) {
     arena.map.candidate[0].evid = SOUND_EVID_SENSORY;
     arena.map.candidate[0].span_start = 0U;
     arena.map.candidate[0].span_end = 5U;
-    arena.map.candidate[0].payload_hash = UINT64_C(0x123456789ABCDEF0); /* mismatch */
+    arena.map.candidate[0].payload_hash = UINT64_C(0x123456789ABCDEF0);
     uint32_t n_adm = 0U;
     if (sound_admit_forest_batch_keyed(&arena, utt, sizeof(utt) - 1U, k0, k1, &n_adm) !=
             SOUND_FIBER_FALLBACK_SPAN ||
@@ -905,7 +918,6 @@ static uint32_t sound_test_t8_siphash_and_atomic_batch(void) {
         fails++;
     }
 
-    /* 3. Atomic 3-candidate batch rollback when candidate[2] violates policy/evid/duplicate */
     arena.map.forest_ctrl.num_candidates = 3U;
     for (uint32_t ci = 0U; ci < 3U; ci++) {
         arena.map.candidate[ci].target_node = 1U + ci;
@@ -917,7 +929,6 @@ static uint32_t sound_test_t8_siphash_and_atomic_batch(void) {
         arena.map.candidate[ci].payload_hash =
             sound_fnv1a_bytes(SOUND_FNV1A_OFFSET, utt + (ci * 6U), 5U);
     }
-    /* Violation a: candidate[2] tries to exceed low evid ceiling (sensory < reportative) */
     arena.map.candidate[2].evid = SOUND_EVID_SENSORY;
     if (sound_admit_forest_batch_keyed(&arena, utt, sizeof(utt) - 1U, k0, k1, &n_adm) !=
             SOUND_FIBER_FALLBACK_POLICY_VIOLATION ||
@@ -926,7 +937,6 @@ static uint32_t sound_test_t8_siphash_and_atomic_batch(void) {
         arena.map.node_meta[2].evid != (uint8_t)SOUND_EVID_ASSUMED) {
         fails++;
     }
-    /* Violation b: duplicate target_node between candidate[0] and candidate[2] */
     arena.map.candidate[2].evid = SOUND_EVID_REPORTATIVE;
     arena.map.candidate[2].target_node = 1U;
     if (sound_admit_forest_batch_keyed(&arena, utt, sizeof(utt) - 1U, k0, k1, &n_adm) !=
@@ -935,8 +945,6 @@ static uint32_t sound_test_t8_siphash_and_atomic_batch(void) {
         arena.map.node_meta[1].evid != (uint8_t)SOUND_EVID_ASSUMED) {
         fails++;
     }
-    /* Clean commit across all 3 candidates under PROPOSER_LOW_EVID: reportative hearsay leaves stay
-     * quarantined */
     arena.map.candidate[2].target_node = 3U;
     if (sound_admit_forest_batch_keyed(&arena, utt, sizeof(utt) - 1U, k0, k1, &n_adm) !=
             SOUND_FIBER_COMMITTED ||
@@ -949,8 +957,6 @@ static uint32_t sound_test_t8_siphash_and_atomic_batch(void) {
         fails++;
     }
 
-    /* 4. Keyed batch without PROPOSER_LOW_EVID: SOUND_EVID_SENSORY receipts establish all 5 nodes
-     */
     if (sound_policy_seal_keyed(&arena, pol_m, bnd_m, SOUND_FOREST_CTRL_NO_DIRECT_CLAIM, k0, k1) !=
         SOUND_FIBER_COMMITTED) {
         fails++;
@@ -972,7 +978,6 @@ static uint32_t sound_test_t9_lex_specialis_and_chart_glue(void) {
     uint32_t fails = UINT32_C(0);
     static SoundArena a, b;
 
-    /* 1. Lex Specialis priority weights vs KanLock dominance */
     sound_arena_init(&a);
     a.map.img_hdr.num_nodes = 2U;
     sound_set_node(&a, 0U, "gen_rule", SOUND_SORT_NORMATIVE, SOUND_EVID_ENACTED_NORM,
@@ -993,7 +998,6 @@ static uint32_t sound_test_t9_lex_specialis_and_chart_glue(void) {
         a.map.searu_repair.best_energy != UINT64_C(10)) {
         fails++;
     }
-    /* Flip weights: keep node 0 instead */
     w1[0] = UINT8_C(120);
     w1[1] = UINT8_C(15);
     if (sound_searu_repair_conflict_weighted(&a, UINT64_C(0xCAFEBABE11223344), 1024U, w1) !=
@@ -1003,7 +1007,6 @@ static uint32_t sound_test_t9_lex_specialis_and_chart_glue(void) {
         a.map.searu_repair.best_energy != UINT64_C(15)) {
         fails++;
     }
-    /* Pin lower-weight node 1 via KanLock: immunity dominates weight 255 vs 1 */
     a.map.norm.immunity_mask = UINT64_C(2);
     w1[0] = UINT8_C(255);
     w1[1] = UINT8_C(1);
@@ -1014,7 +1017,6 @@ static uint32_t sound_test_t9_lex_specialis_and_chart_glue(void) {
         fails++;
     }
 
-    /* 2. Cross-Chart Sheaf Gluing: src -> dst */
     sound_arena_init(&a);
     a.map.img_hdr.num_nodes = 3U;
     sound_set_node(&a, 0U, "src_root", SOUND_SORT_NORMATIVE, SOUND_EVID_ENACTED_NORM,
@@ -1046,7 +1048,6 @@ static uint32_t sound_test_t9_lex_specialis_and_chart_glue(void) {
     sound_zero_bytes(slot_map, sizeof(slot_map));
     slot_map[1] = UINT8_C(1);
 
-    /* Reject exporting non-established / conflicted node or importing into policy slot */
     if (sound_chart_glue_import(&b, &a, UINT64_C(4), slot_map) != SOUND_FIBER_HOLD_INCOHERENT) {
         fails++;
     }
@@ -1057,14 +1058,12 @@ static uint32_t sound_test_t9_lex_specialis_and_chart_glue(void) {
         SOUND_FIBER_FALLBACK_POLICY_VIOLATION) {
         fails++;
     }
-    /* Clean import + verify + downstream firing */
     if (sound_chart_glue_import(&b, &a, UINT64_C(2), slot_map) != SOUND_FIBER_COMMITTED ||
         sound_chart_glue_verify(&b, &a) != SOUND_FIBER_COMMITTED ||
         sound_eval(&b) != SOUND_FIBER_COMMITTED ||
         (b.map.eval_out.established_mask & UINT64_C(0x7)) != UINT64_C(0x7)) {
         fails++;
     }
-    /* Tampering src invalidates glue verification */
     a.map.node_meta[0].span_end ^= UINT32_C(1);
     if (sound_chart_glue_verify(&b, &a) != SOUND_FIBER_FALLBACK_MAC) {
         fails++;
@@ -1079,8 +1078,6 @@ static uint32_t sound_test_t10_policy_eval_fir_lift(void) {
     size_t fir_len = 0U;
     static flow_ir_prog_t prog;
 
-    /* 6-node stratified policy with root, 2 bind slots, derived rule, attacking proviso, penumbra
-     */
     sound_arena_init(&arena);
     arena.map.img_hdr.num_nodes = 6U;
     sound_set_node(&arena, 0U, "statute", SOUND_SORT_NORMATIVE, SOUND_EVID_ENACTED_NORM,
@@ -1135,7 +1132,6 @@ static uint32_t sound_test_t10_policy_eval_fir_lift(void) {
         }
     }
 
-    /* Also test cyclic conflict policy gated by 2 bind slots across all 4 states */
     sound_arena_init(&arena);
     arena.map.img_hdr.num_nodes = 5U;
     sound_set_node(&arena, 0U, "law", SOUND_SORT_NORMATIVE, SOUND_EVID_ENACTED_NORM,
@@ -1185,6 +1181,171 @@ static uint32_t sound_test_t10_policy_eval_fir_lift(void) {
     }
     return fails;
 }
+
+/* ============================================================================
+ * T11..T18 Pure-Theory Pillars 1-4 Self-Tests
+ * ============================================================================ */
+
+static sound_cert_ws_t g_cert_ws;
+
+static uint32_t sound_test_t11_bilattice_classify(void) {
+    uint32_t fails = UINT32_C(0);
+    sound_bilattice_atlas_t atlas;
+    sound_classify_bilattice(&atlas);
+    if (atlas.b4_v4_ok != 1U || atlas.b4_demorgan_ok != 1U || atlas.b4_interlaced_ok != 1U ||
+        atlas.b4_distrib_ok != 1U || atlas.n3_total != 64U || atlas.n4_total != 4096U ||
+        atlas.n3_grounded_unique != 34U || atlas.n3_unique_nongrounded != 6U ||
+        atlas.n3_multi_stable != 22U || atlas.n3_classical_unsolvable != 2U ||
+        atlas.n3_conflict_nonempty != 30U || atlas.n4_classical_unsolvable != 214U ||
+        (atlas.n3_grounded_unique + atlas.n3_unique_nongrounded + atlas.n3_multi_stable +
+         atlas.n3_classical_unsolvable) != 64U ||
+        (atlas.n4_grounded_unique + atlas.n4_unique_nongrounded + atlas.n4_multi_stable +
+         atlas.n4_classical_unsolvable) != 4096U ||
+        (atlas.n4_grounded_unique + atlas.n4_conflict_nonempty) != 4096U) {
+        fails++;
+    }
+    return fails;
+}
+
+static uint32_t sound_test_t12_paradox_min(void) {
+    uint32_t fails = UINT32_C(0);
+    for (uint64_t sd = 0U; sd < 2U; sd++) {
+        sound_paradox_witness_t w;
+        sound_hunt_paradox_min(sd, &w);
+        if (w.num_nodes != 3U || w.classical_models != 0U || w.i_star != 0U || w.p_star != 7U ||
+            w.conflict_mask != 7U || w.is_odd_cycle != 1U || w.merkle == UINT64_C(0)) {
+            fails++;
+        }
+        if (!sound_cert_emit_paradox_fir(&w, NULL, &g_cert_ws) || !g_cert_ws.ir_eval_ok) {
+            fails++;
+        }
+    }
+    return fails;
+}
+
+static uint32_t sound_test_t13_sheaf_classify(void) {
+    uint32_t fails = UINT32_C(0);
+    sound_sheaf_atlas_t atlas;
+    sound_classify_sheaf(&atlas);
+    if (atlas.c3_z4_total != 64U || atlas.c3_z4_coboundary != 16U ||
+        atlas.c3_z4_obstructed != 48U || atlas.c4_z4_total != 256U ||
+        atlas.c4_z4_coboundary != 64U || atlas.c4_z4_obstructed != 192U ||
+        atlas.p3_z4_total != 16U || atlas.p3_z4_coboundary != 16U || atlas.c3_v4_total != 64U ||
+        atlas.c3_v4_coboundary != 16U || atlas.gauge_invariance_ok != 1U) {
+        fails++;
+    }
+    return fails;
+}
+
+static uint32_t sound_test_t14_sheaf_h1_hunt(void) {
+    uint32_t fails = UINT32_C(0);
+    for (uint64_t sd = 1U; sd <= 4U; sd++) {
+        sound_sheaf_witness_t w;
+        sound_hunt_sheaf_h1(sd, &w);
+        if (w.holonomy_z4 == 0U || w.gauge_holonomy_z4 != w.holonomy_z4 ||
+            w.is_coboundary_z4 != 0U || w.skew_symmetric_ok != 1U ||
+            w.xor_holonomy == UINT64_C(0) || w.merkle == UINT64_C(0)) {
+            fails++;
+        }
+        if (!sound_cert_emit_sheaf_fir(&w, NULL, &g_cert_ws) || !g_cert_ws.ir_eval_ok) {
+            fails++;
+        }
+    }
+    return fails;
+}
+
+static uint32_t sound_test_t15_hohfeld_v4_classify(void) {
+    uint32_t fails = UINT32_C(0);
+    sound_hohfeld_atlas_t atlas;
+    sound_classify_hohfeld(&atlas);
+    if (atlas.v4_group_ok != 1U || atlas.v4_orbits != 2U || atlas.transitions_checked == 0U ||
+        atlas.coherence_violations != 0U || atlas.immunity_leaks != 0U ||
+        atlas.disability_leaks != 0U || atlas.reachable_imm0 != 27U || atlas.reachable_imm1 != 9U ||
+        atlas.reachable_imm2 != 3U || atlas.reachable_imm3 != 1U) {
+        fails++;
+    }
+    return fails;
+}
+
+static uint32_t sound_test_t16_chisholm_norm_trap(void) {
+    uint32_t fails = UINT32_C(0);
+    sound_chisholm_witness_t cw;
+    sound_hunt_chisholm(&cw);
+    if (cw.num_nodes != 4U || cw.established_mask != UINT64_C(0xC) ||
+        cw.defeated_mask != UINT64_C(0x3) || cw.conflict_mask != UINT64_C(0) ||
+        cw.penumbra_mask != UINT64_C(0) || cw.hohfeld_ok != 1U ||
+        cw.statuses[0] != (uint8_t)SOUND_STATUS_DEFEATED ||
+        cw.statuses[1] != (uint8_t)SOUND_STATUS_DEFEATED ||
+        cw.statuses[2] != (uint8_t)SOUND_STATUS_ESTABLISHED ||
+        cw.statuses[3] != (uint8_t)SOUND_STATUS_ESTABLISHED) {
+        fails++;
+    }
+    if (!sound_cert_emit_chisholm_fir(NULL, &g_cert_ws) || !g_cert_ws.ir_eval_ok) {
+        fails++;
+    }
+
+    sound_norm_trap_witness_t nw;
+    sound_hunt_norm_trap(UINT64_C(0x77), &nw);
+    if (nw.freeze_ok != 1U || nw.final_pos != UINT64_C(0x4) || nw.final_neg != UINT64_C(0x2) ||
+        nw.step_fiber[0] != (uint8_t)SOUND_FIBER_COMMITTED ||
+        nw.step_fiber[1] != (uint8_t)SOUND_FIBER_HOLD_IMMUNITY ||
+        nw.step_fiber[2] != (uint8_t)SOUND_FIBER_HOLD_NO_POWER ||
+        nw.step_fiber[3] != (uint8_t)SOUND_FIBER_HOLD_INCOHERENT ||
+        nw.energy_keep_a != nw.energy_keep_b || nw.energy_keep_a >= nw.energy_both ||
+        nw.energy_keep_a >= nw.energy_neither || nw.kanlock_win_energy >= nw.kanlock_both_energy) {
+        fails++;
+    }
+    if (!sound_cert_emit_norm_trap_fir(&nw, NULL, &g_cert_ws) || !g_cert_ws.ir_eval_ok) {
+        fails++;
+    }
+    return fails;
+}
+
+static uint32_t sound_test_t17_vendler_aspect(void) {
+    uint32_t fails = UINT32_C(0);
+    sound_aspect_witness_t aw;
+    sound_hunt_aspect_firewall(UINT64_C(0x42), &aw);
+    if (aw.aspect_bijection_ok != 1U || aw.telic_blocked_mask != UINT32_C(3) ||
+        aw.state_gate_telic != 0U || aw.activity_gate_telic != 0U ||
+        aw.accomplishment_gate_telic != 1U || aw.achievement_gate_telic != 1U ||
+        aw.declarative_atelic_fiber != (uint32_t)SOUND_FIBER_FALLBACK_POLICY_VIOLATION ||
+        !(aw.j_start + UINT32_C(2) <= aw.j_end) || !(aw.i_end < aw.j_end)) {
+        fails++;
+    }
+    if (!sound_cert_emit_aspect_fir(NULL, &g_cert_ws) || !g_cert_ws.ir_eval_ok) {
+        fails++;
+    }
+    return fails;
+}
+
+static uint32_t sound_test_t18_projection_and_forces(void) {
+    uint32_t fails = UINT32_C(0);
+    sound_projection_atlas_t pa;
+    sound_classify_projection(&pa);
+    if (pa.total_unary_maps != 256U || pa.involutive_maps != 10U || pa.classical_neg_maps != 1U ||
+        pa.hole_presup_pairs != 16U || pa.strawson_gap_pairs != 12U || pa.cond_filter_ok != 1U ||
+        pa.plug_irrealis_ok != 1U || pa.force_invariants_ok != 1U) {
+        fails++;
+    }
+
+    sound_presup_witness_t pw;
+    sound_hunt_presup_filter(UINT64_C(0x55), &pw);
+    if (pw.eval_fail_b != (uint8_t)SOUND_B4_BOT || pw.eval_neg_fail_b != (uint8_t)SOUND_B4_BOT ||
+        pw.plug_presup != (uint8_t)SOUND_B4_TRUE || pw.plug_eval != (uint8_t)SOUND_B4_BOT ||
+        pw.cond_false_presup != (uint8_t)SOUND_B4_TRUE || pw.cond_true_presup != pw.b_presup ||
+        pw.force_hume_ok != 1U || pw.force_query_ok != 1U || pw.force_irrealis_ok != 1U ||
+        pw.force_directive_ok != 1U) {
+        fails++;
+    }
+    if (!sound_cert_emit_presup_fir(NULL, &g_cert_ws) || !g_cert_ws.ir_eval_ok) {
+        fails++;
+    }
+    return fails;
+}
+
+/* ============================================================================
+ * File I/O & CLI Commands
+ * ============================================================================ */
 
 static bool sound_load_arena_file(const char *path, SoundArena *arena) {
     static uint8_t raw[SOUND_ARENA_BYTES + 1U];
@@ -1258,62 +1419,43 @@ static void sound_derive_prog_name(char dst[24], const char *path) {
 static SoundArena g_cli_arena;
 
 static int sound_cmd_selftest(void) {
-    uint32_t f1 = sound_test_t1_kernel();
-    uint32_t f2 = sound_test_t2_hohfeld_and_rollback();
-    uint32_t f3 = sound_test_t3_frontend_gate();
-    uint32_t f4 = sound_test_t4_arena_merkle();
-    uint32_t f5 = sound_test_t5_searu_repair();
-    uint32_t f6 = sound_test_t6_fuzz_4096();
-    uint32_t f7 = sound_test_t7_fir_lift();
-    uint32_t f8 = sound_test_t8_siphash_and_atomic_batch();
-    uint32_t f9 = sound_test_t9_lex_specialis_and_chart_glue();
-    uint32_t f10 = sound_test_t10_policy_eval_fir_lift();
-    uint32_t tot = f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10;
-    printf(
-        "[selftest] T1(kernel)=%s T2(hohfeld)=%s T3(gate)=%s T4(arena)=%s T5(searu)=%s T6(fuzz4096)=%s T7(fir)=%s T8(siphash_batch)=%s T9(lex_glue)=%s T10(policy_fir)=%s | fails=%u\n",
-        f1 == 0U ? "PASS" : "FAIL", f2 == 0U ? "PASS" : "FAIL", f3 == 0U ? "PASS" : "FAIL",
-        f4 == 0U ? "PASS" : "FAIL", f5 == 0U ? "PASS" : "FAIL", f6 == 0U ? "PASS" : "FAIL",
-        f7 == 0U ? "PASS" : "FAIL", f8 == 0U ? "PASS" : "FAIL", f9 == 0U ? "PASS" : "FAIL",
-        f10 == 0U ? "PASS" : "FAIL", tot);
+    uint32_t f[18];
+    f[0] = sound_test_t1_kernel();
+    f[1] = sound_test_t2_hohfeld_and_rollback();
+    f[2] = sound_test_t3_frontend_gate();
+    f[3] = sound_test_t4_arena_merkle();
+    f[4] = sound_test_t5_searu_repair();
+    f[5] = sound_test_t6_fuzz_4096();
+    f[6] = sound_test_t7_fir_lift();
+    f[7] = sound_test_t8_siphash_and_atomic_batch();
+    f[8] = sound_test_t9_lex_specialis_and_chart_glue();
+    f[9] = sound_test_t10_policy_eval_fir_lift();
+    f[10] = sound_test_t11_bilattice_classify();
+    f[11] = sound_test_t12_paradox_min();
+    f[12] = sound_test_t13_sheaf_classify();
+    f[13] = sound_test_t14_sheaf_h1_hunt();
+    f[14] = sound_test_t15_hohfeld_v4_classify();
+    f[15] = sound_test_t16_chisholm_norm_trap();
+    f[16] = sound_test_t17_vendler_aspect();
+    f[17] = sound_test_t18_projection_and_forces();
+
+    uint32_t tot = UINT32_C(0);
+    for (uint32_t i = 0U; i < 18U; i++) {
+        tot += f[i];
+    }
+    printf("[selftest] T1..T10(kernel)=%s T11(bilat)=%s T12(paradox)=%s T13(sheaf_cls)=%s "
+           "T14(sheaf_h1)=%s T15(hohfeld_v4)=%s T16(chisholm_trap)=%s T17(aspect)=%s "
+           "T18(presup_force)=%s | fails=%u\n",
+           (f[0] + f[1] + f[2] + f[3] + f[4] + f[5] + f[6] + f[7] + f[8] + f[9]) == 0U ? "PASS"
+                                                                                       : "FAIL",
+           f[10] == 0U ? "PASS" : "FAIL", f[11] == 0U ? "PASS" : "FAIL",
+           f[12] == 0U ? "PASS" : "FAIL", f[13] == 0U ? "PASS" : "FAIL",
+           f[14] == 0U ? "PASS" : "FAIL", f[15] == 0U ? "PASS" : "FAIL",
+           f[16] == 0U ? "PASS" : "FAIL", f[17] == 0U ? "PASS" : "FAIL", tot);
     return (tot == 0U) ? 0 : 1;
 }
 
-static const char *sound_fiber_name(sound_fiber_t f) {
-    switch (f) {
-    case SOUND_FIBER_COMMITTED:
-        return "SOUND_FIBER_COMMITTED";
-    case SOUND_FIBER_FALLBACK_NULL:
-        return "SOUND_FIBER_FALLBACK_NULL";
-    case SOUND_FIBER_FALLBACK_BOUNDS:
-        return "SOUND_FIBER_FALLBACK_BOUNDS";
-    case SOUND_FIBER_FALLBACK_FORMAT:
-        return "SOUND_FIBER_FALLBACK_FORMAT";
-    case SOUND_FIBER_FALLBACK_MAC:
-        return "SOUND_FIBER_FALLBACK_MAC";
-    case SOUND_FIBER_HOLD_IMMUNITY:
-        return "SOUND_FIBER_HOLD_IMMUNITY";
-    case SOUND_FIBER_HOLD_NO_POWER:
-        return "SOUND_FIBER_HOLD_NO_POWER";
-    case SOUND_FIBER_HOLD_MISSING_CONTEXT:
-        return "SOUND_FIBER_HOLD_MISSING_CONTEXT";
-    case SOUND_FIBER_HOLD_INCOHERENT:
-        return "SOUND_FIBER_HOLD_INCOHERENT";
-    case SOUND_FIBER_FALLBACK_POLICY_TAMPER:
-        return "SOUND_FIBER_FALLBACK_POLICY_TAMPER";
-    case SOUND_FIBER_FALLBACK_CLARIFY:
-        return "SOUND_FIBER_FALLBACK_CLARIFY";
-    case SOUND_FIBER_FALLBACK_IRREALIS:
-        return "SOUND_FIBER_FALLBACK_IRREALIS";
-    case SOUND_FIBER_FALLBACK_SPAN:
-        return "SOUND_FIBER_FALLBACK_SPAN";
-    case SOUND_FIBER_FALLBACK_POLICY_VIOLATION:
-        return "SOUND_FIBER_FALLBACK_POLICY_VIOLATION";
-    default:
-        return "SOUND_FIBER_UNKNOWN";
-    }
-}
-
-static int sound_cmd_verify(const char *path) {
+static int sound_cmd_verify(const char *path, bool json_out) {
     if (!sound_load_arena_file(path, &g_cli_arena)) {
         fprintf(stderr, "ERROR: unable to read 16,384B SoundArena '%s'\n", path);
         return 1;
@@ -1329,6 +1471,24 @@ static int sound_cmd_verify(const char *path) {
         fprintf(stderr, "ERROR: Kernel invariant violation on '%s' (fiber=%u %s)\n", path,
                 (unsigned)rc, sound_fiber_name(rc));
         return 1;
+    }
+    if (json_out) {
+        printf("{\n");
+        printf("  \"path\": \"%s\",\n", path);
+        printf("  \"num_nodes\": %u,\n", g_cli_arena.map.img_hdr.num_nodes);
+        printf("  \"node_mask\": %llu,\n", (unsigned long long)g_cli_arena.map.eval_out.node_mask);
+        printf("  \"i_star\": %llu,\n", (unsigned long long)g_cli_arena.map.eval_out.i_star);
+        printf("  \"p_star\": %llu,\n", (unsigned long long)g_cli_arena.map.eval_out.p_star);
+        printf("  \"established_mask\": %llu,\n",
+               (unsigned long long)g_cli_arena.map.eval_out.established_mask);
+        printf("  \"defeated_mask\": %llu,\n",
+               (unsigned long long)g_cli_arena.map.eval_out.defeated_mask);
+        printf("  \"conflict_mask\": %llu,\n",
+               (unsigned long long)g_cli_arena.map.eval_out.conflict_mask);
+        printf("  \"penumbra_mask\": %llu\n",
+               (unsigned long long)g_cli_arena.map.eval_out.penumbra_mask);
+        printf("}\n");
+        return 0;
     }
     printf(
         "[verify] %s (16384B, nodes=%u) | I*=0x%016llx P*=0x%016llx est=0x%016llx def=0x%016llx conf=0x%016llx pen=0x%016llx | invariants=OK\n",
@@ -1378,7 +1538,8 @@ static int sound_cmd_repair(const char *path, const char *seed_str) {
         (unsigned long long)g_cli_arena.map.searu_repair.retracted_mask,
         (unsigned long long)g_cli_arena.map.searu_repair.pinned_mask,
         (unsigned long long)g_cli_arena.map.searu_repair.best_energy,
-        g_cli_arena.map.searu_repair.iters_used, g_cli_arena.map.searu_repair.converged);
+        (unsigned)g_cli_arena.map.searu_repair.iters_used,
+        (unsigned)g_cli_arena.map.searu_repair.converged);
     return (g_cli_arena.map.searu_repair.converged == UINT32_C(1)) ? 0 : 1;
 }
 
@@ -1488,19 +1649,260 @@ static int sound_cmd_lift_policy_fir(const char *in_path, const char *out_path) 
     return 0;
 }
 
+static const char *sound_parse_opt(int argc, char **argv, int start, const char *flag) {
+    for (int i = start; i + 1 < argc; i++) {
+        if (sound_cstr_eq(argv[i], flag)) {
+            return argv[i + 1];
+        }
+    }
+    return NULL;
+}
+
+static int sound_cmd_classify_bilattice(const char *out_json) {
+    sound_bilattice_atlas_t a;
+    sound_classify_bilattice(&a);
+    FILE *fp = (out_json != NULL) ? fopen(out_json, "wb") : stdout;
+    if (fp == NULL) {
+        return 1;
+    }
+    fprintf(fp, "{\n");
+    fprintf(fp, "  \"b4_v4_ok\": %u,\n", a.b4_v4_ok);
+    fprintf(fp, "  \"b4_demorgan_ok\": %u,\n", a.b4_demorgan_ok);
+    fprintf(fp, "  \"b4_interlaced_ok\": %u,\n", a.b4_interlaced_ok);
+    fprintf(fp, "  \"b4_distrib_ok\": %u,\n", a.b4_distrib_ok);
+    fprintf(fp, "  \"n3_total\": %u,\n", a.n3_total);
+    fprintf(fp, "  \"n3_grounded_unique\": %u,\n", a.n3_grounded_unique);
+    fprintf(fp, "  \"n3_unique_nongrounded\": %u,\n", a.n3_unique_nongrounded);
+    fprintf(fp, "  \"n3_multi_stable\": %u,\n", a.n3_multi_stable);
+    fprintf(fp, "  \"n3_classical_unsolvable\": %u,\n", a.n3_classical_unsolvable);
+    fprintf(fp, "  \"n3_conflict_nonempty\": %u,\n", a.n3_conflict_nonempty);
+    fprintf(fp, "  \"n4_total\": %u,\n", a.n4_total);
+    fprintf(fp, "  \"n4_grounded_unique\": %u,\n", a.n4_grounded_unique);
+    fprintf(fp, "  \"n4_unique_nongrounded\": %u,\n", a.n4_unique_nongrounded);
+    fprintf(fp, "  \"n4_multi_stable\": %u,\n", a.n4_multi_stable);
+    fprintf(fp, "  \"n4_classical_unsolvable\": %u,\n", a.n4_classical_unsolvable);
+    fprintf(fp, "  \"n4_conflict_nonempty\": %u\n", a.n4_conflict_nonempty);
+    fprintf(fp, "}\n");
+    if (out_json != NULL) {
+        fclose(fp);
+    }
+    return 0;
+}
+
+static int sound_cmd_classify_sheaf(const char *out_json) {
+    sound_sheaf_atlas_t a;
+    sound_classify_sheaf(&a);
+    FILE *fp = (out_json != NULL) ? fopen(out_json, "wb") : stdout;
+    if (fp == NULL) {
+        return 1;
+    }
+    fprintf(fp, "{\n");
+    fprintf(fp, "  \"c3_z4_total\": %u,\n", a.c3_z4_total);
+    fprintf(fp, "  \"c3_z4_coboundary\": %u,\n", a.c3_z4_coboundary);
+    fprintf(fp, "  \"c3_z4_obstructed\": %u,\n", a.c3_z4_obstructed);
+    fprintf(fp, "  \"c4_z4_total\": %u,\n", a.c4_z4_total);
+    fprintf(fp, "  \"c4_z4_coboundary\": %u,\n", a.c4_z4_coboundary);
+    fprintf(fp, "  \"c4_z4_obstructed\": %u,\n", a.c4_z4_obstructed);
+    fprintf(fp, "  \"p3_z4_total\": %u,\n", a.p3_z4_total);
+    fprintf(fp, "  \"p3_z4_coboundary\": %u,\n", a.p3_z4_coboundary);
+    fprintf(fp, "  \"c3_v4_total\": %u,\n", a.c3_v4_total);
+    fprintf(fp, "  \"c3_v4_coboundary\": %u,\n", a.c3_v4_coboundary);
+    fprintf(fp, "  \"gauge_invariance_ok\": %u\n", a.gauge_invariance_ok);
+    fprintf(fp, "}\n");
+    if (out_json != NULL) {
+        fclose(fp);
+    }
+    return 0;
+}
+
+static int sound_cmd_classify_hohfeld(const char *out_json) {
+    sound_hohfeld_atlas_t a;
+    sound_classify_hohfeld(&a);
+    FILE *fp = (out_json != NULL) ? fopen(out_json, "wb") : stdout;
+    if (fp == NULL) {
+        return 1;
+    }
+    fprintf(fp, "{\n");
+    fprintf(fp, "  \"v4_group_ok\": %u,\n", a.v4_group_ok);
+    fprintf(fp, "  \"v4_orbits\": %u,\n", a.v4_orbits);
+    fprintf(fp, "  \"transitions_checked\": %u,\n", a.transitions_checked);
+    fprintf(fp, "  \"coherence_violations\": %u,\n", a.coherence_violations);
+    fprintf(fp, "  \"immunity_leaks\": %u,\n", a.immunity_leaks);
+    fprintf(fp, "  \"disability_leaks\": %u,\n", a.disability_leaks);
+    fprintf(fp, "  \"reachable_imm0\": %u,\n", a.reachable_imm0);
+    fprintf(fp, "  \"reachable_imm1\": %u,\n", a.reachable_imm1);
+    fprintf(fp, "  \"reachable_imm2\": %u,\n", a.reachable_imm2);
+    fprintf(fp, "  \"reachable_imm3\": %u\n", a.reachable_imm3);
+    fprintf(fp, "}\n");
+    if (out_json != NULL) {
+        fclose(fp);
+    }
+    return 0;
+}
+
+static int sound_cmd_classify_projection(const char *out_json) {
+    sound_projection_atlas_t a;
+    sound_classify_projection(&a);
+    FILE *fp = (out_json != NULL) ? fopen(out_json, "wb") : stdout;
+    if (fp == NULL) {
+        return 1;
+    }
+    fprintf(fp, "{\n");
+    fprintf(fp, "  \"total_unary_maps\": %u,\n", a.total_unary_maps);
+    fprintf(fp, "  \"involutive_maps\": %u,\n", a.involutive_maps);
+    fprintf(fp, "  \"t_antitone_maps\": %u,\n", a.t_antitone_maps);
+    fprintf(fp, "  \"k_monotone_maps\": %u,\n", a.k_monotone_maps);
+    fprintf(fp, "  \"classical_neg_maps\": %u,\n", a.classical_neg_maps);
+    fprintf(fp, "  \"hole_presup_pairs\": %u,\n", a.hole_presup_pairs);
+    fprintf(fp, "  \"strawson_gap_pairs\": %u,\n", a.strawson_gap_pairs);
+    fprintf(fp, "  \"cond_filter_ok\": %u,\n", a.cond_filter_ok);
+    fprintf(fp, "  \"plug_irrealis_ok\": %u,\n", a.plug_irrealis_ok);
+    fprintf(fp, "  \"force_invariants_ok\": %u\n", a.force_invariants_ok);
+    fprintf(fp, "}\n");
+    if (out_json != NULL) {
+        fclose(fp);
+    }
+    return 0;
+}
+
+static int sound_cmd_hunt(int argc, char **argv) {
+    const char *mode = argv[2];
+    const char *seed_str = sound_parse_opt(argc, argv, 3, "--seed");
+    const char *out_lean = sound_parse_opt(argc, argv, 3, "--out-lean");
+    const char *out_fir = sound_parse_opt(argc, argv, 3, "--out-fir");
+    const char *out_json = sound_parse_opt(argc, argv, 3, "--out-json");
+    uint64_t seed = UINT64_C(0x534F554E445F3330);
+    if (seed_str != NULL && !sound_parse_u64(seed_str, &seed)) {
+        fprintf(stderr, "ERROR: invalid seed '%s'\n", seed_str);
+        return 1;
+    }
+
+    if (sound_cstr_eq(mode, "paradox-min")) {
+        sound_paradox_witness_t w;
+        sound_hunt_paradox_min(seed, &w);
+        if (!sound_cert_emit_paradox_fir(&w, out_fir, &g_cert_ws)) {
+            return 1;
+        }
+        if (out_lean != NULL && !sound_cert_emit_paradox_lean(&w, out_lean)) {
+            return 1;
+        }
+        if (out_json != NULL && !sound_cert_emit_paradox_json(&w, &g_cert_ws, out_json)) {
+            return 1;
+        }
+        printf("[hunt paradox-min] models=%u conf=0x%x merkle=0x%016llx fir=%zuB\n",
+               w.classical_models, (unsigned)w.conflict_mask, (unsigned long long)w.merkle,
+               g_cert_ws.wire_len);
+        return 0;
+    }
+    if (sound_cstr_eq(mode, "sheaf-h1")) {
+        sound_sheaf_witness_t w;
+        sound_hunt_sheaf_h1(seed, &w);
+        if (!sound_cert_emit_sheaf_fir(&w, out_fir, &g_cert_ws)) {
+            return 1;
+        }
+        if (out_lean != NULL && !sound_cert_emit_sheaf_lean(&w, out_lean)) {
+            return 1;
+        }
+        if (out_json != NULL && !sound_cert_emit_sheaf_json(&w, &g_cert_ws, out_json)) {
+            return 1;
+        }
+        printf("[hunt sheaf-h1] hol_z4=%u cob=%u xor_hol=0x%016llx merkle=0x%016llx fir=%zuB\n",
+               (unsigned)w.holonomy_z4, (unsigned)w.is_coboundary_z4,
+               (unsigned long long)w.xor_holonomy, (unsigned long long)w.merkle,
+               g_cert_ws.wire_len);
+        return 0;
+    }
+    if (sound_cstr_eq(mode, "chisholm")) {
+        sound_chisholm_witness_t w;
+        sound_hunt_chisholm(&w);
+        if (!sound_cert_emit_chisholm_fir(out_fir, &g_cert_ws)) {
+            return 1;
+        }
+        if (out_lean != NULL && !sound_cert_emit_chisholm_lean(&w, out_lean)) {
+            return 1;
+        }
+        if (out_json != NULL && !sound_cert_emit_chisholm_json(&w, &g_cert_ws, out_json)) {
+            return 1;
+        }
+        printf("[hunt chisholm] est=0x%llx def=0x%llx conf=0x%llx merkle=0x%016llx fir=%zuB\n",
+               (unsigned long long)w.established_mask, (unsigned long long)w.defeated_mask,
+               (unsigned long long)w.conflict_mask, (unsigned long long)w.merkle,
+               g_cert_ws.wire_len);
+        return 0;
+    }
+    if (sound_cstr_eq(mode, "norm-trap")) {
+        sound_norm_trap_witness_t w;
+        sound_hunt_norm_trap(seed, &w);
+        if (!sound_cert_emit_norm_trap_fir(&w, out_fir, &g_cert_ws)) {
+            return 1;
+        }
+        if (out_lean != NULL && !sound_cert_emit_norm_trap_lean(&w, out_lean)) {
+            return 1;
+        }
+        if (out_json != NULL && !sound_cert_emit_norm_trap_json(&w, &g_cert_ws, out_json)) {
+            return 1;
+        }
+        printf("[hunt norm-trap] freeze_ok=%u w=%u eA=%u eB=%u merkle=0x%016llx fir=%zuB\n",
+               w.freeze_ok, (unsigned)w.tie_weight, w.energy_keep_a, w.energy_keep_b,
+               (unsigned long long)w.merkle, g_cert_ws.wire_len);
+        return 0;
+    }
+    if (sound_cstr_eq(mode, "aspect-firewall")) {
+        sound_aspect_witness_t w;
+        sound_hunt_aspect_firewall(seed, &w);
+        if (!sound_cert_emit_aspect_fir(out_fir, &g_cert_ws)) {
+            return 1;
+        }
+        if (out_lean != NULL && !sound_cert_emit_aspect_lean(&w, out_lean)) {
+            return 1;
+        }
+        if (out_json != NULL && !sound_cert_emit_aspect_json(&w, &g_cert_ws, out_json)) {
+            return 1;
+        }
+        printf("[hunt aspect-firewall] bij=%u blocked=0x%x fiber=%u merkle=0x%016llx fir=%zuB\n",
+               w.aspect_bijection_ok, w.telic_blocked_mask, w.declarative_atelic_fiber,
+               (unsigned long long)w.merkle, g_cert_ws.wire_len);
+        return 0;
+    }
+    if (sound_cstr_eq(mode, "presup-filter")) {
+        sound_presup_witness_t w;
+        sound_hunt_presup_filter(seed, &w);
+        if (!sound_cert_emit_presup_fir(out_fir, &g_cert_ws)) {
+            return 1;
+        }
+        if (out_lean != NULL && !sound_cert_emit_presup_lean(&w, out_lean)) {
+            return 1;
+        }
+        if (out_json != NULL && !sound_cert_emit_presup_json(&w, &g_cert_ws, out_json)) {
+            return 1;
+        }
+        printf("[hunt presup-filter] gap=(%u,%u) cond_f=%u cond_t=%u merkle=0x%016llx fir=%zuB\n",
+               (unsigned)w.eval_fail_b, (unsigned)w.eval_neg_fail_b, (unsigned)w.cond_false_presup,
+               (unsigned)w.cond_true_presup, (unsigned long long)w.merkle, g_cert_ws.wire_len);
+        return 0;
+    }
+    fprintf(stderr, "ERROR: unknown hunt mode '%s'\n", mode);
+    return 1;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage:\n  sound selftest\n  sound verify <arena.snd>\n"
+        fprintf(stderr, "Usage:\n  sound selftest\n  sound verify <arena.snd> [--json]\n"
                         "  sound repair <arena.snd> [seed]\n"
                         "  sound lift-fir <arena.snd> <out.fir> [--repaired [seed]]\n"
-                        "  sound lift-policy-fir <arena.snd> <out.fir>\n");
+                        "  sound lift-policy-fir <arena.snd> <out.fir>\n"
+                        "  sound classify-<bilattice|sheaf|hohfeld|projection> [--out-json <p>]\n"
+                        "  sound hunt <paradox-min|sheaf-h1|chisholm|norm-trap|aspect-firewall|"
+                        "presup-filter> [--seed <u64>] [--out-lean <p>] [--out-fir <p>] "
+                        "[--out-json <p>]\n");
         return 1;
     }
     if (sound_cstr_eq(argv[1], "selftest")) {
         return sound_cmd_selftest();
     }
     if (sound_cstr_eq(argv[1], "verify") && argc >= 3) {
-        return sound_cmd_verify(argv[2]);
+        bool json_out = (argc >= 4 && sound_cstr_eq(argv[3], "--json"));
+        return sound_cmd_verify(argv[2], json_out);
     }
     if (sound_cstr_eq(argv[1], "repair") && argc >= 3) {
         return sound_cmd_repair(argv[2], (argc >= 4) ? argv[3] : NULL);
@@ -1510,6 +1912,21 @@ int main(int argc, char **argv) {
     }
     if (sound_cstr_eq(argv[1], "lift-policy-fir") && argc >= 4) {
         return sound_cmd_lift_policy_fir(argv[2], argv[3]);
+    }
+    if (sound_cstr_eq(argv[1], "classify-bilattice")) {
+        return sound_cmd_classify_bilattice(sound_parse_opt(argc, argv, 2, "--out-json"));
+    }
+    if (sound_cstr_eq(argv[1], "classify-sheaf")) {
+        return sound_cmd_classify_sheaf(sound_parse_opt(argc, argv, 2, "--out-json"));
+    }
+    if (sound_cstr_eq(argv[1], "classify-hohfeld")) {
+        return sound_cmd_classify_hohfeld(sound_parse_opt(argc, argv, 2, "--out-json"));
+    }
+    if (sound_cstr_eq(argv[1], "classify-projection")) {
+        return sound_cmd_classify_projection(sound_parse_opt(argc, argv, 2, "--out-json"));
+    }
+    if (sound_cstr_eq(argv[1], "hunt") && argc >= 3) {
+        return sound_cmd_hunt(argc, argv);
     }
     fprintf(stderr, "ERROR: invalid arguments\n");
     return 1;

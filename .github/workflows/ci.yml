@@ -12,7 +12,7 @@ on:
 
 jobs:
   verify-sound:
-    name: SOUND Ring-0 Kernel, JSI, Sabotage & Domain-Free SDK (${{ matrix.os }})
+    name: SOUND v3.0.0 Pure-Theory & Ring-0 Verification (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -57,7 +57,7 @@ jobs:
           fi
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
-      - name: Build FLOW & Run All SOUND Core + SDK Verification Gates
+      - name: Build FLOW & Run SOUND v3.0.0 8-Gate + Experiment Suite
         run: |
           export PATH="$HOME/.elan/bin:$PATH"
           if [ "$(uname -s)" = "Darwin" ]; then
@@ -65,8 +65,4 @@ jobs:
           fi
           make -C FLOW all CC=clang CXX=clang++
           make -C SOUND clean
-          make -C SOUND test sabotage-check CC=clang CXX=clang++
-          if [ "$(uname -s)" = "Darwin" ]; then
-            make -C SOUND fmt-check
-          fi
-          make -C SOUND/modules verify
+          make -C SOUND verify-all experiments CC=clang CXX=clang++

@@ -1,44 +1,63 @@
-# SOUND
+# SOUND v3.0.0
 
-**意圖 × 事實 × 推理（Intent × Fact × Reasoning）**
+**Pure Foundational Theory & Ring-0 Pure-GPR Epistemic, Cohomological, Normative & Linguistic Discovery Engine**
 
-`SOUND` 是建構於 [`FLOW v8.0.0`](../FLOW/README.md) SSOT 基底之上的**認識論與規範健全性驗證基礎庫（Epistemic & Normative Soundness Kernel）**。基礎庫本身**不耦合任何上層應用、不編解碼自然語言明文、也不內建領域業務邏輯**：所有企業業務規則、單據解析與流程自動化（如 [`../routine/`](../routine/README.md)）均留在外部專案，透過 Merkle 封印的 `16,384B`（`256 × 64B`）`SoundArena`、Pure-GPR C17 ABI 與領域無關 Python SDK 執行驗證。
+`SOUND v3.0.0` unifies non-monotonic argumentation, discrete sheaf cohomology, complete Hohfeldian legal algebra, and formal linguistics on top of `FLOW` (`Flow.Core`, `Flow.Schema`, `Flow.Morphism`, `"FIR1"` wire IR) across four formally verified pillars (`126` Lean 4 theorems, `0 sorryAx`):
 
----
+1. **Non-Monotonic Bilattice Logic (`Sound.Bilattice`, `classify-bilattice`, `paradox-min`)**:
+   - Belnap 4-valued bilattice $B_4 = (\{\bot, \mathbf{F}, \mathbf{T}, \top\}, \le_t, \le_k)$ with exact Klein-$V_4$ involution symmetry (`¬`, conflict flip `c`), interlaced De Morgan distributivity, alternating-fixpoint operator $\Gamma^2$ (`I*`, `P*`), tag-stratified Hume No-Go firewall (`Is -> Ought` / `Ought -> Is`), evidential leaf quarantine, and bounded SipHash-protected admission guard.
+   - Universal classical Odd-Cycle No-Go (`odd_cycle_classical_nogo`), Even-Cycle two-model bifurcation (`even_cycle_classical_two_models`), and Defeasible vs. Monotonicity No-Go.
+   - Exhaustive attack-digraph phase atlas across all `64` ($N=3$) and `4,096` ($N=4$) loopless graphs:
+     - $N=3$: `34` grounded-unique, `6` unique non-grounded, `22` multi-stable, `2` classically unsolvable (`30` with non-empty bilattice conflict).
+     - $N=4$: `1,389` grounded-unique, `836` unique non-grounded, `1,657` multi-stable, `214` classically unsolvable (`2,707` with non-empty bilattice conflict).
 
-## 一、架構分層（FLOW SSOT × SOUND Kernel × 領域無關 SDK）
+2. **Discrete Čech Sheaf Cohomology ($H^1$) (`Sound.Sheaf`, `classify-sheaf`, `sheaf-h1`)**:
+   - Discrete 1-cochain holonomy, coboundary vanishing (`IsCoboundaryZ4` / `IsCoboundaryV4`), gauge transformations, closed-loop obstructions (`nonzero_holonomy_no_global_section_*_nogo`), chain/tree triviality (`chain_cover_always_coboundary_z4`: $H^1 = 0$), and explicit 3-chart Möbius normative obstructions (`mobius3_h1_obstruction_nogo`: $H^1 \neq 0$).
+   - Exact cohomology classification verifying $|H^1(\mathcal{G}, G)| = |G|^{|E|-|V|+1}$: `C3(Z4)` (`16/64` coboundaries, `48` obstructed, `4` gauge orbits), `C4(Z4)` (`64/256` coboundaries, `192` obstructed), `P3(Z4)` (`16/16` coboundaries), `C3(V4)` (`16/64` coboundaries), plus `K4` ($\beta_1 = 3$, $|H^1| = 64$ over $\mathbb{Z}_4 / V_4$) in experiments.
 
-| 層級 | 所在模組 | 核心職責與邊界 |
-| :--- | :--- | :--- |
-| **數學基底（SSOT）** | [`../FLOW/`](../FLOW/README.md)（`Flow.Core`、`Flow.Schema`、`Flow.Morphism`、`searu.h`、`flow_ir_wire.h`）＋ [`Sound/Bilattice.lean`](Sound/Bilattice.lean) | 領域無關的 Lean 4 機器驗證（`46` 定理、`0 sorryAx`、`leanchecker`）：四態雙格交替不動點 $\Gamma / \Gamma^2$、統一 HoTT Fallback Fiber 總遷移（`SoundFiber` / `potestativeFiberStepBV64` / `batchAdmit2BV64`）、Lex Specialis 加權能量與 KanLock 支配定理（`lexSpecialisPairEnergy`）、Cross-64-Node Sheaf Chart Gluing（`chartGlueValidBV64`）、Prepared-Statement 政策／資料隔離謂詞（`preparedPolicyAdmitBV64`）、512-bit 零 `memcpy` C17 Arena Co-Generator（`Flow.Schema`）與 `"FIR1"` 通用線性態射編碼。 |
-| **Layer 0（零信任 Prepared-Statement × SipHash × HoTT 入口閘門）** | [`sound.h`](sound.h) `sound_policy_seal_keyed` / `sound_policy_verify_keyed` / `sound_admit_forest_batch_keyed` / `sound_admit_forest_with_utterance` ＋ `Sound.Bilattice` | 以統一全函數遷移 `sound_fiber_t`（`COMMITTED` 或 1..13 `HOLD/FALLBACK` 纖維，記錄於 `forest_ctrl.last_fiber` / `fiber_epoch`）取代傳統 OOP 錯誤碼；支援 Pure-GPR SipHash-2-4 金鑰 Policy MAC（含降級攻擊防禦）、2-Phase 原子批次繫結（全過或零寫入回滾）、Layer-0 原文 Span Hash 比對與 `PROPOSER_LOW_EVID` 傳聞證據上限；將不可信提議者嚴格限制在預編譯參數槽（`bind_mask ⊥ policy_mask`），攔截免疫／政策／未綁定槽位、跨層 `sort`、特權升級與拓撲注入。 |
-| **Layer 1（單調日誌 × Hohfeld 守恆 × Cross-Chart Gluing）** | [`sound.h`](sound.h) `PhysLog` ＋ `SoundNormative64` ＋ `SoundChartGlue64` | 物理事件只增不減進入 64-slot 環形 `PhysLog`（FNV-1a 鏈）；規範層維護 Hohfeld `Duty+/Duty-/Power/Immunity/Voidable/RescissionPower`；並提供 Cross-64-Node Sheaf Chart Gluing（`sound_chart_export_port` / `sound_chart_glue_import` / `sound_chart_glue_verify`，持久化於 `flow_aux[37]`），將已成立無衝突出口以 Merkle 憑證貼合至下游 Arena 事實繫結槽。 |
-| **Layer 2（四態雙格核心 × 加權 SEARU × 雙路徑 FIR1 升格）** | [`Sound.lean`](Sound.lean) ≡ [`sound.h`](sound.h) | `Sound.lean` 以 `0` 本地定理配置 256-slot `soundArenaSchema`，於 Elaboration-Time 透過 `sound_lean_jsi.c` 驗證 10 組 golden `16,384B` `.snd` 與 `2,144B` `"FIR1"` 位元等價。`sound_eval` 計算四態雙格與雙向休謨防火牆；`sound_searu_repair_conflict_weighted` 支援 Lex Specialis 法規優先權重（KanLock 免疫無條件優先）；`sound_lift_to_fir`（權限閘門）與 `sound_lift_policy_eval_to_fir`（將封裝政策直接編譯為 combinational `FLOW_IR_MULT_LINEAR` `.fir` 電路）皆維持 Pure-GPR Ring-0 潔淨。 |
-| **領域無關 Python SDK** | [`modules/`](modules/README.md) | 提供 [`arena_codec.py`](modules/common/arena_codec.py)（`SoundFiber` FFI／CLI 雙路橋接）、[`prepared_policy.py`](modules/common/prepared_policy.py)（SQLite 式 `PreparedPolicy` SDK）、[`compute_bridge.py`](modules/common/compute_bridge.py)（精確 `Fraction` DAG／`pro_rata`／`CB_AUX01`／Lean 4 證明／`FIR1` 降階）與 [`spatial_bridge.py`](modules/common/spatial_bridge.py)（平面深度／遮擋／運動學邊際檢定），與 `SOUND` 核心完全解耦。 |
+3. **Complete 8-Position Hohfeld Legal Algebra & Deontic Traps (`Sound.Hohfeld`, `classify-hohfeld`, `chisholm`, `norm-trap`)**:
+   - All `8` first-order and second-order Hohfeldian positions (`Claim`, `Privilege`, `Duty`, `NoRight`, `Power`, `Immunity`, `Liability`, `Disability`) proved as a faithful Klein $V_4 = \{\mathrm{id}, C, O, D\}$ group action partitioning cleanly into `2` disjoint 4-element orbits.
+   - Multi-step Kinetic-Freeze No-Go theorems (`immunity_kinetic_freeze_trace_nogo`, `disability_frozen_trace_nogo`, `zero_power_complete_freeze_nogo`), verified across all `82,944` 3-slot transition tuples (`0` coherence violations, `0` immunity leaks, `0` disability leaks) and exact reachability orbit sizes `|R| = 3^{3 - |I|} = 27, 9, 3, 1`.
+   - Classical SDL Chisholm Contrary-to-Duty Explosion No-Go (`sdl_chisholm_explosion_nogo`) vs. SOUND stratified consistency (`sound_chisholm_stratified_consistent`), plus weighted SEARU / Lex Specialis partial-order tie obstructions (`E_A = E_B = 64` vs. KanLock override `E = 255`).
 
----
+4. **Formal Linguistics Algebra (`Sound.Linguistics`, `classify-projection`, `aspect-firewall`, `presup-filter`)**:
+   - Vendler Aktionsart feature lattice (`±Dynamic × ±Telic`) isomorphism (`State`, `Activity`, `Accomplishment`, `Achievement`), universal Homogeneity vs. Quantization No-Go (`homogeneous_quantized_nogo`), and Imperfective-to-Constitutive semantic firewall (`imperfective_activity_blocked_constitutive_nogo`).
+   - 4-valued Presupposition Projection algebra (`Hole` negation / `Plug` irrealis / Karttunen–Heim `Filter` conditional) and Classical Bivalent Truth-Gap No-Go (`classical_bivalent_truth_gap_nogo`), classifying all `256` unary $B_4 \to B_4$ operators (`10` involutive, `36` $t$-antitone, `36` $k$-monotone, `1` unique classical negation), all `16` Hole pairs (`12` Strawson truth-gap pairs), and all `256` conditional pairs.
+   - 5 Illocutionary Force Endofunctors (`Assertion`, `Query`, `Irrealis`, `Directive`, `Declarative`) preserving epistemic/normative/modal conservation laws.
 
-## 二、檔案結構
+## Architecture
 
-* [**`Sound.lean`**](Sound.lean)：按需引入 `Flow.Core` / `Flow.Schema` / `Flow.Morphism` ＋ [`Sound/Bilattice.lean`](Sound/Bilattice.lean) 的純配置與 AOT `SoundArena` / `Flow.Morphism` `.fir` 編譯器（`0` 本地 `theorem/lemma/axiom`、通過 `leanchecker`），負責產出 `build/sound_schema_abi.h` 並執行 `#eval Sound.compileTimeBoundaryGate`。
-* [**`sound.h`**](sound.h)：單標頭 Pure-GPR C17 核心（零堆積、零浮點、`-ffreestanding -nostdlib -fno-builtin -mgeneral-regs-only` Ring-0 潔淨、相容 C++20），含 SipHash-2-4 HMAC、原子批次入口閘門、Lex Specialis 加權 SEARU、Cross-Chart Gluing、`sound_lift_to_fir` 與 `sound_lift_policy_eval_to_fir`。
-* [**`sound_lean_jsi.c`**](sound_lean_jsi.c)：Lean 4 動態外掛 JSI 橋接（僅編入 `libsound_jsi`，絕不進入 `libsound.a` 或 `build/sound`）。
-* [**`sound.c`**](sound.c) ＋ [**`Makefile`**](Makefile) ＋ [**`tools/sound_sabotage_check.py`**](tools/sound_sabotage_check.py)：零堆積、零 `leanshared` 獨立 CLI（`selftest` T1..T10 / `verify` / `repair` / `lift-fir` / `lift-policy-fir`）與 18-mutant 單點破壞變異測試閘門（`make sabotage-check`）。
-* [**`modules/`**](modules/README.md)：領域無關 Python 3.9+ stdlib SDK（`arena_codec.py`、`prepared_policy.py`、`compute_bridge.py`、`spatial_bridge.py`）。
+- [`Sound/Bilattice.lean`](Sound/Bilattice.lean), [`Sound/Sheaf.lean`](Sound/Sheaf.lean), [`Sound/Hohfeld.lean`](Sound/Hohfeld.lean), [`Sound/Linguistics.lean`](Sound/Linguistics.lean), [`Sound/Theory.lean`](Sound/Theory.lean): Pure Lean 4 formal foundations (`65 + 18 + 22 + 21 = 126` top-level theorems, `0 sorryAx`), importing only Lean stdlib (`Std.Tactic.BVDecide`).
+- [`Sound.lean`](Sound.lean): Pure `Flow.Schema` `256`-slot (`16,384B`) arena ABI compiler & golden fixture emitter (`0` local theorems/lemmas/axioms, `0 memcpy` in generated `build/sound_schema_abi.h`, emitting `10` canonical `.snd` arenas + `"FIR1"` circuits + `golden_manifest.json`).
+- [`include/sound.h`](include/sound.h) & [`src/sound_ring0.c`](src/sound_ring0.c): Freestanding Ring-0 Pure-GPR C17 kernel (`0` undef symbols, `0` `udiv`/`sdiv`/FPU/SIMD/indirect calls, `C++20` header clean, `clang-tidy` 0 warnings).
+- [`src/sound_cert.h`](src/sound_cert.h) & [`src/sound_cli.c`](src/sound_cli.c): Zero-heap, zero-`leanshared` host CLI & certificate emitter (`T1..T18` built-in self-tests, `"FIR1"` synthesis/eval, and live `.lean` / `.json` certificate emission).
+- [`oracles/verify_sound_oracle.py`](oracles/verify_sound_oracle.py): Independent pure-Python exact oracle checking 10/10 Golden `SoundArena` (`16,384B`) + `"FIR1"` (`2,144B`) parity + SEARU repair, all 4 `classify-*` universes, and 6/6 live `lean -DwarningAsError=true` + `leanchecker` + `0 sorryAx` certificate replays.
+- [`tools/sound_sabotage_check.py`](tools/sound_sabotage_check.py): Parallel `42`-mutant single-fault C17 verification suite across `14` categories (`42/42 = 100.0%` killed, `0` compile errors).
+- [`experiments/`](experiments): 4 pure-theory stdlib-Python scripts (`bilattice_phase_atlas.py`, `sheaf_h1_atlas.py`, `hohfeld_norm_orbits.py`, `linguistics_projection_atlas.py`) cross-checked against `./build/sound`.
 
----
+## Build & Verify
 
-## 三、一鍵驗證閘門
-
-```bash
-make fmt && make clean && make verify && make sabotage-check && make -C modules verify
+```sh
+make clean && make -j verify-all && make experiments
 ```
 
-驗證內容涵蓋：
-1. **Gate 0 / Gate 1（Lean 4 SSOT + `leanchecker` + ABI）**：驗證 `Sound/Bilattice.lean` 全 `46` 條定理（`0 sorryAx`、`leanchecker Sound.Bilattice`）與 `Sound.lean` 零本地定理／零佔位符、通過 `leanchecker Sound`，並產出零 `memcpy` 的 `build/sound_schema_abi.h`。
-2. **Gate 2（Ring-0 Pure-GPR + C++20 + `clang-tidy`）**：驗證 `0 undef`、`0 udiv/sdiv`、`0 blr/br`、`0 FPU/SIMD`、`16,384B / 64B` C++20 ABI 與靜態分析零警告。
-3. **Gate 3（Zero-Lean-Runtime 獨立執行檔）**：驗證 `libsound.a`、`libsound.dylib` 與 `build/sound` 零堆積、零浮點、零 `leanshared`。
-4. **Gate 4（JSI Elaboration-Time 閘門）**：驗證 10 組 `16,384B` `.snd` 與 `2,144B` `"FIR1"` 電路 Lean↔C17 位元對等、`flow_ir_eval_u64` 執行、`SEARU` 衝突修復、Layer 0 Prepared-Statement 政策／資料隔離、Layer 1 測試與 4,096 組隨機圖不變量 Fuzz。
-5. **Gate 5（CLI 實測與 `clang-format`）**：執行 `sound selftest`（`T1..T10` 含 SipHash-2-4、原子批次、`LOW_EVID`、Lex Specialis、Chart Gluing 與 Policy-Eval FIR 編譯）、`verify`、`repair`、`lift-fir`、`cmp -s` 位元比對與格式檢查。
-6. **Gate 6（單點破壞變異測試 `make sabotage-check`）**：注入 18 項跨全層單點語義破壞並以 `sound selftest` 實測擊殺率（`18/18 = 100.0%`）。
-7. **SDK 驗證（`make -C modules verify`）**：執行領域無關 SDK 單元測試（編解碼防篡改、FFI/CLI 一致性、`PreparedPolicy` 隔離、SipHash-2-4、加權 SEARU、Chart Gluing、`ComputeBridge` 與 `SpatialBridge`）。
+Run standalone classifiers, hunts, and arena verification:
+
+```sh
+./build/sound selftest
+./build/sound classify-bilattice  --out-json build/certs/classify_bilattice.json
+./build/sound classify-sheaf      --out-json build/certs/classify_sheaf.json
+./build/sound classify-hohfeld    --out-json build/certs/classify_hohfeld.json
+./build/sound classify-projection --out-json build/certs/classify_projection.json
+
+./build/sound hunt paradox-min     --seed 0x1337 --out-lean build/certs/SoundHuntParadox.lean --out-fir build/certs/paradox.fir --out-json build/certs/paradox.json
+./build/sound hunt sheaf-h1        --seed 0x1337 --out-lean build/certs/SoundHuntSheaf.lean   --out-fir build/certs/sheaf.fir   --out-json build/certs/sheaf.json
+./build/sound hunt chisholm                      --out-lean build/certs/SoundHuntChisholm.lean --out-fir build/certs/chisholm.fir --out-json build/certs/chisholm.json
+./build/sound hunt norm-trap       --seed 0x77   --out-lean build/certs/SoundHuntNormTrap.lean --out-fir build/certs/norm_trap.fir --out-json build/certs/norm_trap.json
+./build/sound hunt aspect-firewall --seed 0x42   --out-lean build/certs/SoundHuntAspect.lean   --out-fir build/certs/aspect.fir  --out-json build/certs/aspect.json
+./build/sound hunt presup-filter   --seed 0x55   --out-lean build/certs/SoundHuntPresup.lean   --out-fir build/certs/presup.fir  --out-json build/certs/presup.json
+
+./build/sound verify build/golden/case1_corroborated.snd --json
+./build/sound repair build/golden/nixon_diamond.snd
+./build/sound lift-fir build/golden/case1_corroborated.snd build/case1_corroborated_cli.fir
+```

@@ -1,12 +1,12 @@
 /-
-  SOUND v2.1.0 — Epistemic Kernel Config, 64B Arena ABI Compiler & JSI Boundary Gate
-  ==================================================================================
+  SOUND v3.0.0 — Pure Epistemic Schema ABI Compiler & Golden Fixture Emitter
+  ===========================================================================
   Consumes domain-free `../FLOW/{core,sdk}` (`Flow.Core`, `Flow.Schema`, `Flow.Morphism`)
-  plus local formal bilattice & Hohfeldian theorems in `Sound/Bilattice.lean`.
-  This file configures the 256-slot `16,384B` `soundArenaSchema`, declares the
-  canonical golden soundness cases, executes elaboration-time Lean<->C17 bit-exact parity
-  and SEARU conflict-repair gates (`compileTimeBoundaryGate`), and seals `16,384B`
-  `.snd` containers with ZERO local definitions of theorems, lemmas, or axioms.
+  plus local formal bilattice theorems in `Sound/Bilattice.lean`.
+  This file configures the 256-slot `16,384B` `soundArenaSchema`, declares the 10
+  canonical golden soundness cases, emits `build/sound_schema_abi.h` (0 `memcpy`),
+  and emits `.snd`, `.fir`, and `golden_manifest.json` with ZERO local definitions of
+  theorems, lemmas, or axioms.
 -/
 
 import Flow.Core
@@ -16,7 +16,7 @@ import Sound.Bilattice
 
 namespace Sound
 
-def version       : String := "2.1.0"
+def version       : String := "3.0.0"
 def cellBytes     : Nat    := 64
 def arenaCells    : Nat    := 256
 def arenaBytes    : Nat    := arenaCells * cellBytes
@@ -414,60 +414,62 @@ def buildAuthorityFir (name : String) (mutableMask activeMask rescMask : UInt64)
   let (b23, finalPos) := b22.andVec "final_pos" 64 nextPos notFired
   b23.build [finalPos, nextNeg, nextResc, kEst]
 
-/-! ## Part 4: Elaboration-Time Lean 4 <-> C17 JSI Boundary Gate -/
+/-! ## Part 4: Pure Schema & Golden Fixture CLI Emitter (`0` `leanshared` JSI) -/
 
-@[extern "sound_jsi_verify_arena_bytes"]
-opaque verifyArenaBytes (raw : @& ByteArray)
-    (expNm expI expP expEst expDef expConf expPen : UInt64) : IO Bool
-
-@[extern "sound_jsi_verify_searu_repair"]
-opaque verifySearuRepair (raw : @& ByteArray) (seed : UInt64) : IO Bool
-
-@[extern "sound_jsi_verify_fir_lift"]
-opaque verifyFirLift (rawArena : @& ByteArray) (expFir : @& ByteArray)
-    (progName : @& String) : IO Bool
-
-@[extern "sound_jsi_verify_core_suites"]
-opaque verifyCoreSuites (seed : UInt64) : IO Bool
-
-private def requireGate (label : String) (ok : Bool) : IO Unit := do
+def emitSchemaTo (outPath : System.FilePath) : IO Unit := do
+  if let some parent := outPath.parent then
+    IO.FS.createDirAll parent
+  let ok ← soundArenaSchema.emitC17HeaderChecked outPath.toString
   if !ok then
-    IO.eprintln s!"[SOUND-JSI-GATE] FAIL: {label}"
-    IO.Process.exit 1
+    throw <| IO.userError s!"[SOUND] Schema ABI emission/verification failed for {outPath}"
 
-def compileTimeBoundaryGate : IO Unit := do
-  IO.FS.createDirAll "build"
-  let schemaOk ← emitSchemaOnly
-  requireGate "SoundArena schema ABI emission" schemaOk
+def emitGoldenDir (dir : System.FilePath) : IO Unit := do
+  IO.FS.createDirAll dir
+  let mut manifestRows : List String := []
   for gc in goldenCases do
-    let bin? := buildSealedArenaBytes gc.nodes gc.slots
-    match bin? with
-    | none =>
-        requireGate s!"pack {gc.name}" false
-    | some bin =>
-        requireGate s!"{gc.name} exact 16,384B VM page" (bin.size == arenaBytes)
-        let bNodes := gc.nodes.map toBilatticeNode
-        let (nm, iStar, pStar, est, defM, conf, pen) := Sound.Bilattice.statusMasks leafThreshold bNodes
-        let parityOk ← verifyArenaBytes bin nm iStar pStar est defM conf pen
-        requireGate s!"Lean4<->C17 16KB Arena parity ({gc.name})" parityOk
-        let mutMask := gc.slots.powerMask &&& (~~~gc.slots.immunityMask)
-        let rescMask := gc.slots.rescissionPowerMask &&& (~~~gc.slots.immunityMask)
-        let fir? := Flow.Morphism.encodeFir (buildAuthorityFir gc.name mutMask est rescMask)
-        match fir? with
-        | none =>
-            requireGate s!"encodeFir {gc.name}" false
-        | some expFir =>
-            requireGate s!"{gc.name} exact 2,144B FIR1" (expFir.size == 2144)
-            let firOk ← verifyFirLift bin expFir gc.name
-            requireGate s!"Lean4<->C17 FIR1 lift & eval ({gc.name})" firOk
-            if gc.name == "case3_park" || gc.name == "case2_auction_pre" then
-              IO.FS.writeBinFile s!"build/{gc.name}.fir" expFir
-        if gc.name == "nixon_diamond" || gc.name == "case3_park" then
-          let searuOk ← verifySearuRepair bin 0x53454152555F3230
-          requireGate s!"SEARU KanLock conflict repair ({gc.name})" searuOk
-        IO.FS.writeBinFile s!"build/{gc.name}.snd" bin
-  let suitesOk ← verifyCoreSuites 0x534F554E445F4655
-  requireGate "C17 Layer 0/1/2 + Arena tamper + 4,096-graph fuzz suites" suitesOk
-  IO.println s!"[SOUND-JSI-GATE] PASS: {goldenCases.length} x (16KB SND2 + 2,144B FIR1) + SEARU + 4,096-graph fuzz"
+    let some bin := buildSealedArenaBytes gc.nodes gc.slots
+      | throw <| IO.userError s!"[SOUND] pack {gc.name} failed"
+    if bin.size != arenaBytes then
+      throw <| IO.userError s!"[SOUND] {gc.name} size {bin.size} != {arenaBytes}"
+    let bNodes := gc.nodes.map toBilatticeNode
+    let (nm, iStar, pStar, est, defM, conf, pen) := Sound.Bilattice.statusMasks leafThreshold bNodes
+    let mutMask := gc.slots.powerMask &&& (~~~gc.slots.immunityMask)
+    let rescMask := gc.slots.rescissionPowerMask &&& (~~~gc.slots.immunityMask)
+    let some expFir := Flow.Morphism.encodeFir (buildAuthorityFir gc.name mutMask est rescMask)
+      | throw <| IO.userError s!"[SOUND] encodeFir {gc.name} failed"
+    if expFir.size != 2144 then
+      throw <| IO.userError s!"[SOUND] {gc.name} FIR1 size {expFir.size} != 2144"
+    IO.FS.writeBinFile (dir / s!"{gc.name}.snd") bin
+    IO.FS.writeBinFile (dir / s!"{gc.name}.fir") expFir
+    let row :=
+      "  {\n" ++
+      s!"    \"name\": \"{gc.name}\",\n" ++
+      s!"    \"num_nodes\": {gc.nodes.length},\n" ++
+      s!"    \"node_mask\": {nm},\n" ++
+      s!"    \"i_star\": {iStar},\n" ++
+      s!"    \"p_star\": {pStar},\n" ++
+      s!"    \"established_mask\": {est},\n" ++
+      s!"    \"defeated_mask\": {defM},\n" ++
+      s!"    \"conflict_mask\": {conf},\n" ++
+      s!"    \"penumbra_mask\": {pen}\n" ++
+      "  }"
+    manifestRows := manifestRows ++ [row]
+  let manifestJson :=
+    "{\n" ++
+    s!"  \"version\": \"{version}\",\n" ++
+    s!"  \"schema_hash\": {soundArenaSchema.schemaHash},\n" ++
+    "  \"cases\": [\n" ++
+    String.intercalate ",\n" manifestRows ++ "\n" ++
+    "  ]\n" ++
+    "}\n"
+  IO.FS.writeFile (dir / "golden_manifest.json") manifestJson
 
 end Sound
+
+def main (args : List String) : IO Unit := do
+  match args with
+  | ["emit-schema", outPath] => Sound.emitSchemaTo outPath
+  | ["emit-golden", dirPath] => Sound.emitGoldenDir dirPath
+  | _ =>
+      Sound.emitSchemaTo "build/sound_schema_abi.h"
+      Sound.emitGoldenDir "build/golden"
