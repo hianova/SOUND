@@ -1,0 +1,81 @@
+{
+  "contract_name": "Elder_Structured_Policy_Predatory_2026",
+  "seed": "0x454C4445525F3031",
+  "max_loss_cap": 25000,
+  "max_exit_fee": 2000,
+  "protected_mask": 15,
+  "max_asym_num": 2,
+  "max_asym_den": 1,
+  "clauses": [
+    {
+      "clause_id": 1,
+      "title": "Disclosed annual advisory & custody fee",
+      "kind": "base_fee",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 12000,
+      "extra_drift": 0,
+      "exit_fee": 1000,
+      "cons_penalty": 500,
+      "inst_penalty": 500,
+      "sheaf_cycle": false
+    },
+    {
+      "clause_id": 2,
+      "title": "Disclosed fixed mortality & admin charge",
+      "kind": "reciprocity",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 8000,
+      "extra_drift": 0,
+      "exit_fee": 1500,
+      "cons_penalty": 600,
+      "inst_penalty": 300,
+      "sheaf_cycle": false
+    },
+    {
+      "clause_id": 3,
+      "title": "Unilateral issuer rider piercing capital-protection immunity",
+      "kind": "unilateral_power",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 2,
+      "base_loss": 0,
+      "extra_drift": 40000,
+      "exit_fee": 0,
+      "cons_penalty": 0,
+      "inst_penalty": 0,
+      "sheaf_cycle": false
+    },
+    {
+      "clause_id": 4,
+      "title": "Hidden fine-print MVA early-liquidation deduction",
+      "kind": "presup_smuggle",
+      "disclosed": false,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 5000,
+      "extra_drift": 18000,
+      "exit_fee": 0,
+      "cons_penalty": 0,
+      "inst_penalty": 0,
+      "sheaf_cycle": false
+    },
+    {
+      "clause_id": 5,
+      "title": "Ambiguous discretionary surrender fee and unconscionable forfeiture",
+      "kind": "ambiguous_obligation",
+      "disclosed": true,
+      "b4_truth": "BOT",
+      "target_mask": 0,
+      "base_loss": 0,
+      "extra_drift": 22000,
+      "exit_fee": 9000,
+      "cons_penalty": 15000,
+      "inst_penalty": 500,
+      "sheaf_cycle": false
+    }
+  ]
+}

@@ -430,6 +430,7 @@ def _replay_one_lean_cert(mode: str, lean_file: Path, mod_name: str) -> Tuple[st
     ax_res = run_cmd([str(LEAN), "-DwarningAsError=true", "--stdin"], env=env, stdin_text=axiom_script)
     assert ax_res.returncode == 0, f"axiom check failed for {mode}:\n{ax_res.stderr}"
     assert "sorryAx" not in ax_res.stdout, f"sorryAx leaked in {mode}!\n{ax_res.stdout}"
+    assert "Lean.ofReduceBool" not in ax_res.stdout, f"Lean.ofReduceBool leaked in {mode}!\n{ax_res.stdout}"
     return mode, len(thms)
 
 
@@ -443,6 +444,7 @@ def verify_all_hunts_and_certs() -> None:
         ("norm-trap", "CertNormTrap"),
         ("aspect-firewall", "CertAspectFirewall"),
         ("presup-filter", "CertPresupFilter"),
+        ("contract-drift", "CertContractDrift"),
     ]
     jobs = []
     for mode, mod_name in modes:
@@ -500,6 +502,13 @@ def verify_all_hunts_and_certs() -> None:
                 and w["force_irrealis_ok"] == 1
                 and w["force_directive_ok"] == 1
             )
+        elif mode == "contract-drift":
+            assert w["certified"] == 0 and w["verdict"] == "VETOED"
+            assert w["repaired_certified"] == 1
+            assert w["num_predatory_clauses"] == 4
+            assert w["benefit_drift"] == w["worst_case_loss"] - w["max_loss_cap"] > 0
+            assert w["repaired_worst_loss"] <= w["max_loss_cap"]
+            assert (w["viol_flags"] & 0xBF) == 0xBF
 
         jobs.append((mode, lean_p, mod_name))
 
@@ -510,7 +519,7 @@ def verify_all_hunts_and_certs() -> None:
         for f in futs:
             m, n_thms = f.result()
             summary.append(f"{m}({n_thms} thms)")
-    print(f"  [Oracle-CertReplay] 6/6 live lean + leanchecker + 0 sorryAx PASS: {', '.join(summary)}")
+    print(f"  [Oracle-CertReplay] 7/7 live lean + leanchecker + 0 sorryAx PASS: {', '.join(summary)}")
 
 
 def main() -> int:
@@ -525,7 +534,7 @@ def main() -> int:
     verify_classify_hohfeld()
     verify_classify_projection()
     verify_all_hunts_and_certs()
-    print("[Gate 5] PASS (100% Lean<->C17 parity, 4/4 classifiers, 6/6 live Lean+leanchecker certs)")
+    print("[Gate 5] PASS (100% Lean<->C17 parity, 4/4 classifiers, 7/7 live Lean+leanchecker certs)")
     return 0
 
 

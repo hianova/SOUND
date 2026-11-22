@@ -876,4 +876,219 @@ static inline bool sound_cert_emit_presup_json(const sound_presup_witness_t *w,
     return true;
 }
 
+/* ============================================================================
+ * 7. Pillar 5: `contract-drift` (.lean, .fir, .json)
+ * ============================================================================ */
+
+static inline const char *sound_cert_clause_kind_lean(uint8_t k) {
+    switch (k) {
+    case (uint8_t)SOUND_CLAUSE_BASE_FEE:
+        return ".baseFee";
+    case (uint8_t)SOUND_CLAUSE_UNILATERAL_POWER:
+        return ".unilateralPower";
+    case (uint8_t)SOUND_CLAUSE_AMBIGUOUS_OBLIGATION:
+        return ".ambiguousObligation";
+    case (uint8_t)SOUND_CLAUSE_PRESUP_SMUGGLE:
+        return ".presupSmuggle";
+    case (uint8_t)SOUND_CLAUSE_CHISHOLM_DEFAULT:
+        return ".chisholmDefault";
+    case (uint8_t)SOUND_CLAUSE_RECIPROCITY:
+        return ".reciprocity";
+    default:
+        return ".baseFee";
+    }
+}
+
+static inline bool sound_cert_emit_contract_lean(const sound_contract_spec_t *spec,
+                                                 const sound_contract_audit_t *audit,
+                                                 const char *path) {
+    if (spec == NULL || audit == NULL || path == NULL) {
+        return false;
+    }
+    FILE *fp = fopen(path, "wb");
+    if (fp == NULL) {
+        return false;
+    }
+    uint32_t n = spec->num_clauses;
+    if (n > SOUND_CONTRACT_MAX_CLAUSES) {
+        n = SOUND_CONTRACT_MAX_CLAUSES;
+    }
+
+    fprintf(fp, "import Sound.Theory\n\n");
+    fprintf(fp, "namespace Sound.CertContractDrift\n\n");
+    fprintf(fp, "open Sound.Contract Sound.Bilattice\n\n");
+    fprintf(fp, "def spec : SummarySpec :=\n");
+    fprintf(fp,
+            "  { maxLossCap := %llu, maxExitFee := %llu, protectedMask := 0x%llx#64, "
+            "maxAsymNum := %llu, maxAsymDen := %llu }\n\n",
+            (unsigned long long)spec->max_loss_cap, (unsigned long long)spec->max_exit_fee,
+            (unsigned long long)spec->protected_mask, (unsigned long long)spec->max_asym_num,
+            (unsigned long long)spec->max_asym_den);
+
+    fprintf(fp, "def clauses : List ContractClause :=\n");
+    if (n == 0U) {
+        fprintf(fp, "  []\n\n");
+    } else {
+        for (uint32_t i = 0U; i < n; i++) {
+            const sound_contract_clause_t *c = &spec->clauses[i];
+            fprintf(fp,
+                    "  %c { clauseId := %u, kind := %s, disclosed := %s, targetMask := 0x%llx#64, "
+                    "b4Truth := %u#2, baseLoss := %llu, extraDrift := %llu, exitFee := %llu, "
+                    "consPenalty := %llu, instPenalty := %llu, sheafCycle := %s }\n",
+                    (i == 0U) ? '[' : ',', (unsigned)c->clause_id,
+                    sound_cert_clause_kind_lean(c->kind), (c->disclosed != 0U) ? "true" : "false",
+                    (unsigned long long)c->target_mask, (unsigned)(c->b4_truth & 3U),
+                    (unsigned long long)c->base_loss, (unsigned long long)c->extra_drift,
+                    (unsigned long long)c->exit_fee, (unsigned long long)c->cons_penalty,
+                    (unsigned long long)c->inst_penalty, (c->sheaf_cycle != 0U) ? "true" : "false");
+        }
+        fprintf(fp, "  ]\n\n");
+    }
+
+    if (audit->certified == UINT32_C(1)) {
+        fprintf(fp, "theorem cert_contract_verdict :\n");
+        fprintf(fp, "    auditContract spec clauses = .certified := by\n");
+        fprintf(fp, "  decide\n\n");
+
+        fprintf(fp, "theorem cert_adversarial_loss_bound (act : AdversarialAction) :\n");
+        fprintf(fp, "    actualConsumerLoss act clauses ≤ spec.maxLossCap :=\n");
+        fprintf(fp,
+                "  certified_bounds_adversarial_loss spec clauses cert_contract_verdict act\n\n");
+
+        fprintf(fp, "theorem cert_zero_benefit_drift :\n");
+        fprintf(fp, "    benefitDrift spec clauses ≤ 0 :=\n");
+        fprintf(fp, "  certified_zero_benefit_drift spec clauses cert_contract_verdict\n\n");
+    } else {
+        fprintf(fp, "theorem cert_contract_vetoed :\n");
+        fprintf(fp, "    auditContract spec clauses = .vetoed := by\n");
+        fprintf(fp, "  decide\n\n");
+        if (audit->repaired_certified == UINT32_C(1)) {
+            fprintf(fp, "theorem cert_repaired_certified :\n");
+            fprintf(fp,
+                    "    auditContract spec (repairContract spec clauses) = .certified := by\n");
+            fprintf(fp, "  decide\n\n");
+
+            fprintf(fp, "theorem cert_repaired_adversarial_bound (act : AdversarialAction) :\n");
+            fprintf(
+                fp,
+                "    actualConsumerLoss act (repairContract spec clauses) ≤ spec.maxLossCap :=\n");
+            fprintf(fp, "  certified_bounds_adversarial_loss spec (repairContract spec clauses) "
+                        "cert_repaired_certified act\n\n");
+        } else {
+            fprintf(fp, "theorem cert_repair_removes_predatory :\n");
+            fprintf(fp,
+                    "    ∀ c ∈ repairContract spec clauses, clausePredatory spec c = false :=\n");
+            fprintf(fp, "  (repair_eliminates_predatory_clauses spec clauses).1\n\n");
+        }
+    }
+
+    fprintf(fp, "end Sound.CertContractDrift\n");
+    fclose(fp);
+    return true;
+}
+
+static inline bool sound_cert_emit_contract_fir(const sound_contract_audit_t *audit,
+                                                const char *out_fir_path, sound_cert_ws_t *ws) {
+    if (audit == NULL || ws == NULL) {
+        return false;
+    }
+    sound_cert_init_prog(ws, "contract_consent_gate");
+    flow_ir_prog_t *p = &ws->ir_prog;
+    p->num_inputs = 2U;
+    p->inputs[0] = 0U;
+    p->inputs[1] = 1U;
+    p->vals[0].width = 1U;
+    p->vals[1].width = 1U;
+    snprintf(p->vals[0].name, sizeof(p->vals[0].name), "viol_nonzero");
+    snprintf(p->vals[1].name, sizeof(p->vals[1].name), "over_cap");
+    p->num_vals = 2U;
+
+    uint32_t pair = sound_cert_emit_op2(p, FLOW_IR_OP_CONCAT, 2U, 0U, 1U, "pair2");
+    uint32_t vetoed = sound_cert_emit_op1(p, FLOW_IR_OP_OR_REDUCE, 1U, pair, 0U, "vetoed");
+    uint32_t cert = sound_cert_emit_op1(p, FLOW_IR_OP_NOT_VEC, 1U, vetoed, 0U, "certified");
+    if (pair == UINT32_MAX || vetoed == UINT32_MAX || cert == UINT32_MAX) {
+        return false;
+    }
+    p->num_outputs = 2U;
+    p->outputs[0] = cert;
+    p->outputs[1] = vetoed;
+    if (!sound_cert_seal_and_write_fir(ws, out_fir_path)) {
+        return false;
+    }
+
+    bool ok = true;
+    for (uint32_t a = 0U; a < 2U; a++) {
+        for (uint32_t b = 0U; b < 2U; b++) {
+            uint64_t inv[2] = {(uint64_t)a, (uint64_t)b};
+            uint64_t outv[2] = {UINT64_C(0), UINT64_C(0)};
+            uint64_t exp_veto = (a != 0U || b != 0U) ? UINT64_C(1) : UINT64_C(0);
+            uint64_t exp_cert = UINT64_C(1) ^ exp_veto;
+            if (!flow_ir_eval_u64(&ws->ir_reloaded, inv, outv) || (outv[0] & 1ULL) != exp_cert ||
+                (outv[1] & 1ULL) != exp_veto) {
+                ok = false;
+                break;
+            }
+        }
+    }
+    {
+        uint64_t inv[2] = {
+            (audit->viol_flags != UINT32_C(0) || audit->num_predatory_clauses != UINT32_C(0))
+                ? UINT64_C(1)
+                : UINT64_C(0),
+            (audit->benefit_drift > 0) ? UINT64_C(1) : UINT64_C(0)};
+        uint64_t outv[2] = {UINT64_C(0), UINT64_C(0)};
+        if (!flow_ir_eval_u64(&ws->ir_reloaded, inv, outv) ||
+            (outv[0] & 1ULL) != (uint64_t)(audit->certified != UINT32_C(0) ? 1U : 0U)) {
+            ok = false;
+        }
+    }
+    ws->ir_eval_ok = ok;
+    return ok;
+}
+
+static inline bool sound_cert_emit_contract_json(const sound_contract_spec_t *spec,
+                                                 const sound_contract_audit_t *audit,
+                                                 const sound_cert_ws_t *ws, const char *path) {
+    if (spec == NULL || audit == NULL || path == NULL) {
+        return false;
+    }
+    FILE *fp = fopen(path, "wb");
+    if (fp == NULL) {
+        return false;
+    }
+    uint32_t npred = audit->num_predatory_clauses;
+    if (npred > SOUND_CONTRACT_MAX_CLAUSES) {
+        npred = SOUND_CONTRACT_MAX_CLAUSES;
+    }
+    fprintf(fp, "{\n");
+    fprintf(fp, "  \"mode\": \"contract-drift\",\n");
+    fprintf(fp, "  \"seed\": \"0x%016llx\",\n", (unsigned long long)spec->seed);
+    fprintf(fp, "  \"certified\": %u,\n", (unsigned)audit->certified);
+    fprintf(fp, "  \"verdict\": \"%s\",\n",
+            (audit->certified != UINT32_C(0)) ? "CERTIFIED" : "VETOED");
+    fprintf(fp, "  \"viol_flags\": %u,\n", (unsigned)audit->viol_flags);
+    fprintf(fp, "  \"num_clauses\": %u,\n", (unsigned)spec->num_clauses);
+    fprintf(fp, "  \"num_predatory_clauses\": %u,\n", (unsigned)audit->num_predatory_clauses);
+    fprintf(fp, "  \"repaired_certified\": %u,\n", (unsigned)audit->repaired_certified);
+    fprintf(fp, "  \"max_loss_cap\": %llu,\n", (unsigned long long)spec->max_loss_cap);
+    fprintf(fp, "  \"max_exit_fee\": %llu,\n", (unsigned long long)spec->max_exit_fee);
+    fprintf(fp, "  \"base_loss_sum\": %llu,\n", (unsigned long long)audit->base_loss_sum);
+    fprintf(fp, "  \"worst_case_loss\": %llu,\n", (unsigned long long)audit->worst_case_loss);
+    fprintf(fp, "  \"benefit_drift\": %lld,\n", (long long)audit->benefit_drift);
+    fprintf(fp, "  \"max_exit_seen\": %llu,\n", (unsigned long long)audit->max_exit_seen);
+    fprintf(fp, "  \"repaired_worst_loss\": %llu,\n",
+            (unsigned long long)audit->repaired_worst_loss);
+    fprintf(fp, "  \"predatory_clause_ids\": [");
+    for (uint32_t i = 0U; i < npred; i++) {
+        fprintf(fp, "%s%u", (i == 0U) ? "" : ", ", (unsigned)audit->predatory_clause_ids[i]);
+    }
+    fprintf(fp, "],\n");
+    fprintf(fp, "  \"merkle\": \"0x%016llx\",\n", (unsigned long long)audit->merkle);
+    fprintf(fp, "  \"fir_wire_bytes\": %zu,\n", (ws != NULL) ? ws->wire_len : 0U);
+    fprintf(fp, "  \"fir_eval_ok\": %s\n", (ws != NULL && ws->ir_eval_ok) ? "true" : "false");
+    fprintf(fp, "}\n");
+    fclose(fp);
+    return true;
+}
+
 #endif /* SOUND_CERT_H */

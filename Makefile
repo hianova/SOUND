@@ -63,11 +63,16 @@ $(BUILD)/lean/Sound/Linguistics.olean: Sound/Linguistics.lean $(BUILD)/lean/Soun
 	@mkdir -p $(dir $@)
 	LEAN_PATH=$(BUILD)/lean $(LEAN) -DwarningAsError=true --root=. -o $@ $<
 
+$(BUILD)/lean/Sound/Contract.olean: Sound/Contract.lean $(BUILD)/lean/Sound/Bilattice.olean $(BUILD)/lean/Sound/Hohfeld.olean
+	@mkdir -p $(dir $@)
+	LEAN_PATH=$(BUILD)/lean $(LEAN) -DwarningAsError=true --root=. -o $@ $<
+
 $(BUILD)/lean/Sound/Theory.olean: Sound/Theory.lean \
 		$(BUILD)/lean/Sound/Bilattice.olean \
 		$(BUILD)/lean/Sound/Sheaf.olean \
 		$(BUILD)/lean/Sound/Hohfeld.olean \
-		$(BUILD)/lean/Sound/Linguistics.olean
+		$(BUILD)/lean/Sound/Linguistics.olean \
+		$(BUILD)/lean/Sound/Contract.olean
 	@mkdir -p $(dir $@)
 	LEAN_PATH=$(BUILD)/lean $(LEAN) -DwarningAsError=true --root=. -o $@ $<
 
@@ -94,17 +99,18 @@ $(BUILD)/sound: $(BUILD)/sound_ring0.o src/sound_cli.c src/sound_cert.h include/
 	$(CC) $(C17_HOST_FLAGS) $(INC_HOST) $(BUILD)/sound_ring0.o src/sound_cli.c -o $@
 
 gate0-lean-theory: $(BUILD)/lean/Sound/Theory.olean
-	@echo "[Gate 0] Checking 4 pure-theory pillars via leanchecker and axiom audit..."
-	@if grep -qiE '\bsorry\b' Sound/Bilattice.lean Sound/Sheaf.lean Sound/Hohfeld.lean Sound/Linguistics.lean Sound/Theory.lean; then \
+	@echo "[Gate 0] Checking 5 pure-theory pillars via leanchecker and axiom audit..."
+	@if grep -qiE '\bsorry\b' Sound/Bilattice.lean Sound/Sheaf.lean Sound/Hohfeld.lean Sound/Linguistics.lean Sound/Contract.lean Sound/Theory.lean; then \
 		echo "ERROR: sorry found in Sound theory modules"; exit 1; \
 	fi
-	@for m in Sound.Bilattice Sound.Sheaf Sound.Hohfeld Sound.Linguistics Sound.Theory; do \
+	@for m in Sound.Bilattice Sound.Sheaf Sound.Hohfeld Sound.Linguistics Sound.Contract Sound.Theory; do \
 		LEAN_PATH=$(BUILD)/lean $(LEANCHECKER) $$m || exit 1; \
 	done
-	@python3 -c 'import pathlib, re; mods=[("Sound.Bilattice","Sound/Bilattice.lean"),("Sound.Sheaf","Sound/Sheaf.lean"),("Sound.Hohfeld","Sound/Hohfeld.lean"),("Sound.Linguistics","Sound/Linguistics.lean")]; thms=[f"#print axioms {m}.{n}" for m,p in mods for n in re.findall(r"^theorem\s+(\S+)", pathlib.Path(p).read_text(encoding="utf-8"), re.M)]; assert len(thms)==126, f"Expected 126 theorems, got {len(thms)}"; pathlib.Path("$(BUILD)/sound_axioms.in").write_text("import Sound.Theory\n" + "\n".join(thms) + "\n", encoding="utf-8")'
+	@python3 -c 'import pathlib, re; mods=[("Sound.Bilattice","Sound/Bilattice.lean"),("Sound.Sheaf","Sound/Sheaf.lean"),("Sound.Hohfeld","Sound/Hohfeld.lean"),("Sound.Linguistics","Sound/Linguistics.lean"),("Sound.Contract","Sound/Contract.lean")]; thms=[f"#print axioms {m}.{n}" for m,p in mods for n in re.findall(r"^theorem\s+(\S+)", pathlib.Path(p).read_text(encoding="utf-8"), re.M)]; assert len(thms)==142, f"Expected 142 theorems, got {len(thms)}"; pathlib.Path("$(BUILD)/sound_axioms.in").write_text("import Sound.Theory\n" + "\n".join(thms) + "\n", encoding="utf-8")'
 	@LEAN_PATH=$(BUILD)/lean $(LEAN) --stdin < $(BUILD)/sound_axioms.in > $(BUILD)/sound_axioms.txt
 	@if grep -q 'sorryAx' $(BUILD)/sound_axioms.txt; then echo "ERROR: sorryAx detected"; exit 1; fi
-	@echo "[Gate 0] PASS (Sound.Theory 126 theorems, 0 sorryAx)"
+	@if grep -q 'Lean\.ofReduceBool' $(BUILD)/sound_axioms.txt; then echo "ERROR: Lean.ofReduceBool detected"; exit 1; fi
+	@echo "[Gate 0] PASS (Sound.Theory 142 theorems, 0 sorryAx, 0 ofReduceBool)"
 
 gate1-lean-schema: $(BUILD)/sound_schema_abi.h $(BUILD)/golden/golden_manifest.json
 	@echo "[Gate 1] Auditing Sound.lean pure schema config, golden fixtures, and ABI header..."
@@ -135,7 +141,7 @@ endif
 	@echo "[Gate 2] PASS (0 undef symbols, Pure-GPR clean, C++20 clean, clang-tidy 0 warnings)"
 
 gate3-selftest: $(BUILD)/sound
-	@echo "[Gate 3] Running built-in 18-suite Ring-0 + cert selftest..."
+	@echo "[Gate 3] Running built-in 19-suite Ring-0 + cert selftest..."
 	./$(BUILD)/sound selftest
 	@echo "[Gate 3] PASS"
 
@@ -157,7 +163,7 @@ gate5-oracle: gate0-lean-theory gate1-lean-schema gate4-cli-audit
 	@echo "[Gate 5] PASS"
 
 gate6-sabotage: gate1-lean-schema
-	@echo "[Gate 6] Running 42-mutant single-fault sabotage gate..."
+	@echo "[Gate 6] Running 48-mutant single-fault sabotage gate..."
 	python3 tools/sound_sabotage_check.py
 	@echo "[Gate 6] PASS"
 
@@ -167,11 +173,12 @@ gate7-format:
 	@echo "[Gate 7] PASS"
 
 experiments: $(BUILD)/sound
-	@echo "[Experiments] Running 4 pure-theory atlas & orbit experiments..."
+	@echo "[Experiments] Running 5 pure-theory atlas, orbit & contract-consent experiments..."
 	python3 experiments/bilattice_phase_atlas.py
 	python3 experiments/sheaf_h1_atlas.py
 	python3 experiments/hohfeld_norm_orbits.py
 	python3 experiments/linguistics_projection_atlas.py
+	python3 experiments/contract_informed_consent_audit.py
 	@echo "[Experiments] PASS"
 
 fmt:

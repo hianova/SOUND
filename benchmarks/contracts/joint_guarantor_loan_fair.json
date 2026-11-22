@@ -1,0 +1,39 @@
+{
+  "contract_name": "Joint_Guarantor_Loan_Fair_2026",
+  "seed": "0x4A4F494E545F3032",
+  "max_loss_cap": 50000,
+  "max_exit_fee": 3000,
+  "protected_mask": 15,
+  "max_asym_num": 2,
+  "max_asym_den": 1,
+  "clauses": [
+    {
+      "clause_id": 1,
+      "title": "Disclosed capped personal-guarantee slice",
+      "kind": "base_fee",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 45000,
+      "extra_drift": 0,
+      "exit_fee": 2000,
+      "cons_penalty": 1000,
+      "inst_penalty": 1000,
+      "sheaf_cycle": false
+    },
+    {
+      "clause_id": 2,
+      "title": "Disclosed notice-and-cure proportional administrative fee",
+      "kind": "reciprocity",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 3000,
+      "extra_drift": 0,
+      "exit_fee": 2500,
+      "cons_penalty": 1000,
+      "inst_penalty": 1000,
+      "sheaf_cycle": false
+    }
+  ]
+}

@@ -537,6 +537,82 @@ def build_sound_mutants() -> list[SoundMutant]:
             "        return SOUND_FIBER_COMMITTED;\n"
             "    }",
         ),
+        # --- 15. contract_drift_immunity (3) ---
+        SoundMutant(
+            "M43_contract_drop_immunity_breach",
+            "contract_drift_immunity",
+            "        if (c->kind == (uint8_t)SOUND_CLAUSE_UNILATERAL_POWER &&\n"
+            "            (c->target_mask & spec->protected_mask) != UINT64_C(0)) {\n"
+            "            c_viol |= (uint32_t)SOUND_CVIOL_IMMUNITY_BREACH;\n"
+            "        }",
+            "        if (c->kind == (uint8_t)SOUND_CLAUSE_UNILATERAL_POWER &&\n"
+            "            (c->target_mask & spec->protected_mask) != UINT64_C(0) && false) {\n"
+            "            c_viol |= (uint32_t)SOUND_CVIOL_IMMUNITY_BREACH;\n"
+            "        }",
+        ),
+        SoundMutant(
+            "M44_contract_drop_cap_drift_veto",
+            "contract_drift_immunity",
+            "    if (worst_sum > spec->max_loss_cap) {\n"
+            "        out->viol_flags |= (uint32_t)SOUND_CVIOL_BENEFIT_DRIFT;\n"
+            "    }",
+            "    if (worst_sum > spec->max_loss_cap && false) {\n"
+            "        out->viol_flags |= (uint32_t)SOUND_CVIOL_BENEFIT_DRIFT;\n"
+            "    }",
+        ),
+        SoundMutant(
+            "M45_contract_drop_presup_smuggle",
+            "contract_drift_immunity",
+            "        if (c->disclosed == UINT8_C(0) &&\n"
+            "            (c->base_loss > UINT64_C(0) || c->extra_drift > UINT64_C(0) ||\n"
+            "             c->exit_fee > UINT64_C(0))) {\n"
+            "            c_viol |= (uint32_t)SOUND_CVIOL_PRESUP_SMUGGLE;\n"
+            "        }",
+            "        if (c->disclosed == UINT8_C(0) &&\n"
+            "            (c->base_loss > UINT64_C(0) || c->extra_drift > UINT64_C(0) ||\n"
+            "             c->exit_fee > UINT64_C(0)) &&\n"
+            "            false) {\n"
+            "            c_viol |= (uint32_t)SOUND_CVIOL_PRESUP_SMUGGLE;\n"
+            "        }",
+        ),
+        # --- 16. contract_informed_asym (3) ---
+        SoundMutant(
+            "M46_contract_drop_ambiguity_veto",
+            "contract_informed_asym",
+            "        if (c->b4_truth == (uint8_t)SOUND_B4_BOT || c->b4_truth == (uint8_t)SOUND_B4_TOP ||\n"
+            "            c->kind == (uint8_t)SOUND_CLAUSE_AMBIGUOUS_OBLIGATION) {\n"
+            "            c_viol |= (uint32_t)SOUND_CVIOL_UNINFORMED_AMBIG;\n"
+            "        }",
+            "        if ((c->b4_truth == (uint8_t)SOUND_B4_BOT || c->b4_truth == (uint8_t)SOUND_B4_TOP ||\n"
+            "             c->kind == (uint8_t)SOUND_CLAUSE_AMBIGUOUS_OBLIGATION) &&\n"
+            "            false) {\n"
+            "            c_viol |= (uint32_t)SOUND_CVIOL_UNINFORMED_AMBIG;\n"
+            "        }",
+        ),
+        SoundMutant(
+            "M47_contract_drop_unconscionable",
+            "contract_informed_asym",
+            "        if (((unsigned __int128)c->cons_penalty * (unsigned __int128)spec->max_asym_den) >\n"
+            "            ((unsigned __int128)c->inst_penalty * (unsigned __int128)spec->max_asym_num)) {\n"
+            "            c_viol |= (uint32_t)SOUND_CVIOL_UNCONSCIONABLE;\n"
+            "        }",
+            "        if ((((unsigned __int128)c->cons_penalty * (unsigned __int128)spec->max_asym_den) >\n"
+            "             ((unsigned __int128)c->inst_penalty * (unsigned __int128)spec->max_asym_num)) &&\n"
+            "            false) {\n"
+            "            c_viol |= (uint32_t)SOUND_CVIOL_UNCONSCIONABLE;\n"
+            "        }",
+        ),
+        SoundMutant(
+            "M48_contract_drop_chisholm_cascade",
+            "contract_informed_asym",
+            "        if (c->kind == (uint8_t)SOUND_CLAUSE_CHISHOLM_DEFAULT && c->extra_drift > UINT64_C(0)) {\n"
+            "            c_viol |= (uint32_t)SOUND_CVIOL_CHISHOLM_CASCADE;\n"
+            "        }",
+            "        if (c->kind == (uint8_t)SOUND_CLAUSE_CHISHOLM_DEFAULT && c->extra_drift > UINT64_C(0) &&\n"
+            "            false) {\n"
+            "            c_viol |= (uint32_t)SOUND_CVIOL_CHISHOLM_CASCADE;\n"
+            "        }",
+        ),
     ]
 
 

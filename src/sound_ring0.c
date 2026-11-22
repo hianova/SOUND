@@ -2941,3 +2941,171 @@ void sound_hunt_presup_filter(uint64_t seed, sound_presup_witness_t *out) {
     mh = sound_fnv1a_u64(mh, (uint64_t)out->cond_true_presup);
     out->merkle = mh;
 }
+
+static uint64_t sound__sat_add_u64(uint64_t a, uint64_t b) {
+    return (a > (UINT64_MAX - b)) ? UINT64_MAX : (a + b);
+}
+
+void sound_audit_contract(const sound_contract_spec_t *spec, sound_contract_audit_t *out) {
+    if (out == NULL) {
+        return;
+    }
+    sound_zero_bytes(out, sizeof(*out));
+    if (spec == NULL) {
+        out->viol_flags = (uint32_t)SOUND_CVIOL_UNCONSCIONABLE;
+        return;
+    }
+
+    uint32_t n = spec->num_clauses;
+    if (n > SOUND_CONTRACT_MAX_CLAUSES) {
+        n = SOUND_CONTRACT_MAX_CLAUSES;
+        out->viol_flags |= (uint32_t)SOUND_CVIOL_BENEFIT_DRIFT;
+    }
+
+    uint64_t base_sum = UINT64_C(0);
+    uint64_t worst_sum = UINT64_C(0);
+    uint64_t rep_worst_sum = UINT64_C(0);
+
+    for (uint32_t i = 0U; i < n; i++) {
+        const sound_contract_clause_t *c = &spec->clauses[i];
+        base_sum = sound__sat_add_u64(base_sum, c->base_loss);
+        worst_sum = sound__sat_add_u64(worst_sum, sound__sat_add_u64(c->base_loss, c->extra_drift));
+        if (c->exit_fee > out->max_exit_seen) {
+            out->max_exit_seen = c->exit_fee;
+        }
+
+        uint32_t c_viol = UINT32_C(0);
+        if (c->kind == (uint8_t)SOUND_CLAUSE_UNILATERAL_POWER &&
+            (c->target_mask & spec->protected_mask) != UINT64_C(0)) {
+            c_viol |= (uint32_t)SOUND_CVIOL_IMMUNITY_BREACH;
+        }
+        if (c->b4_truth == (uint8_t)SOUND_B4_BOT || c->b4_truth == (uint8_t)SOUND_B4_TOP ||
+            c->kind == (uint8_t)SOUND_CLAUSE_AMBIGUOUS_OBLIGATION) {
+            c_viol |= (uint32_t)SOUND_CVIOL_UNINFORMED_AMBIG;
+        }
+        if (c->disclosed == UINT8_C(0) &&
+            (c->base_loss > UINT64_C(0) || c->extra_drift > UINT64_C(0) ||
+             c->exit_fee > UINT64_C(0))) {
+            c_viol |= (uint32_t)SOUND_CVIOL_PRESUP_SMUGGLE;
+        }
+        if (((unsigned __int128)c->cons_penalty * (unsigned __int128)spec->max_asym_den) >
+            ((unsigned __int128)c->inst_penalty * (unsigned __int128)spec->max_asym_num)) {
+            c_viol |= (uint32_t)SOUND_CVIOL_UNCONSCIONABLE;
+        }
+        if (c->kind == (uint8_t)SOUND_CLAUSE_CHISHOLM_DEFAULT && c->extra_drift > UINT64_C(0)) {
+            c_viol |= (uint32_t)SOUND_CVIOL_CHISHOLM_CASCADE;
+        }
+        if (c->sheaf_cycle != UINT8_C(0)) {
+            c_viol |= (uint32_t)SOUND_CVIOL_SHEAF_CONFLICT;
+        }
+        if (c->exit_fee > spec->max_exit_fee) {
+            c_viol |= (uint32_t)SOUND_CVIOL_EXIT_TRAP;
+        }
+        if (c->extra_drift > UINT64_C(0)) {
+            c_viol |= (uint32_t)SOUND_CVIOL_BENEFIT_DRIFT;
+        }
+
+        out->clause_viol_masks[i] = c_viol;
+        if (c_viol != UINT32_C(0)) {
+            out->viol_flags |= c_viol;
+            out->predatory_clause_ids[out->num_predatory_clauses] = c->clause_id;
+            out->num_predatory_clauses++;
+        } else {
+            rep_worst_sum = sound__sat_add_u64(rep_worst_sum, c->base_loss);
+        }
+    }
+
+    if (worst_sum > spec->max_loss_cap) {
+        out->viol_flags |= (uint32_t)SOUND_CVIOL_BENEFIT_DRIFT;
+    }
+    if (spec->max_asym_den == UINT64_C(0)) {
+        out->viol_flags |= (uint32_t)SOUND_CVIOL_UNCONSCIONABLE;
+    }
+
+    int64_t w_i64 = (worst_sum <= (uint64_t)INT64_MAX) ? (int64_t)worst_sum : INT64_MAX;
+    int64_t cap_i64 =
+        (spec->max_loss_cap <= (uint64_t)INT64_MAX) ? (int64_t)spec->max_loss_cap : INT64_MAX;
+    out->base_loss_sum = base_sum;
+    out->worst_case_loss = worst_sum;
+    out->benefit_drift = w_i64 - cap_i64;
+    out->repaired_worst_loss = rep_worst_sum;
+    out->certified = (spec->num_clauses <= SOUND_CONTRACT_MAX_CLAUSES &&
+                      out->viol_flags == UINT32_C(0) && out->num_predatory_clauses == UINT32_C(0))
+                         ? UINT32_C(1)
+                         : UINT32_C(0);
+    out->repaired_certified =
+        (spec->num_clauses <= SOUND_CONTRACT_MAX_CLAUSES && spec->max_asym_den != UINT64_C(0) &&
+         rep_worst_sum <= spec->max_loss_cap)
+            ? UINT32_C(1)
+            : UINT32_C(0);
+
+    uint64_t mh = SOUND_FNV1A_OFFSET;
+    mh = sound_fnv1a_u64(mh, (uint64_t)out->certified);
+    mh = sound_fnv1a_u64(mh, (uint64_t)out->viol_flags);
+    mh = sound_fnv1a_u64(mh, out->worst_case_loss);
+    mh = sound_fnv1a_u64(mh, out->repaired_worst_loss);
+    mh = sound_fnv1a_u64(mh, (uint64_t)out->num_predatory_clauses);
+    out->merkle = mh;
+}
+
+void sound_hunt_contract_drift(uint64_t seed, sound_contract_spec_t *spec_out,
+                               sound_contract_audit_t *audit_out) {
+    if (spec_out == NULL || audit_out == NULL) {
+        return;
+    }
+    sound_zero_bytes(spec_out, sizeof(*spec_out));
+    uint64_t r = seed ^ UINT64_C(0x434F4E5452414354);
+    uint64_t d = sound__splitmix64(&r);
+
+    spec_out->seed = seed;
+    spec_out->max_loss_cap = UINT64_C(12000);
+    spec_out->max_exit_fee = UINT64_C(2000);
+    spec_out->protected_mask = UINT64_C(0xF);
+    spec_out->max_asym_num = UINT64_C(2);
+    spec_out->max_asym_den = UINT64_C(1);
+    spec_out->num_clauses = 5U;
+
+    /* Clause 1: fair disclosed base fee within cap */
+    spec_out->clauses[0].clause_id = 1U;
+    spec_out->clauses[0].kind = (uint8_t)SOUND_CLAUSE_BASE_FEE;
+    spec_out->clauses[0].disclosed = UINT8_C(1);
+    spec_out->clauses[0].b4_truth = (uint8_t)SOUND_B4_TRUE;
+    spec_out->clauses[0].base_loss = UINT64_C(6000) + (d & UINT64_C(2047));
+    spec_out->clauses[0].cons_penalty = UINT64_C(100);
+    spec_out->clauses[0].inst_penalty = UINT64_C(100);
+
+    /* Clause 2: unilateral power piercing protected consumer core immunity */
+    spec_out->clauses[1].clause_id = 2U;
+    spec_out->clauses[1].kind = (uint8_t)SOUND_CLAUSE_UNILATERAL_POWER;
+    spec_out->clauses[1].disclosed = UINT8_C(1);
+    spec_out->clauses[1].b4_truth = (uint8_t)SOUND_B4_TRUE;
+    spec_out->clauses[1].target_mask = UINT64_C(0x4);
+    spec_out->clauses[1].extra_drift = UINT64_C(25000);
+
+    /* Clause 3: undefined B4_BOT unilateral reasonableness fee clause */
+    spec_out->clauses[2].clause_id = 3U;
+    spec_out->clauses[2].kind = (uint8_t)SOUND_CLAUSE_AMBIGUOUS_OBLIGATION;
+    spec_out->clauses[2].disclosed = UINT8_C(1);
+    spec_out->clauses[2].b4_truth = (uint8_t)SOUND_B4_BOT;
+    spec_out->clauses[2].extra_drift = UINT64_C(15000);
+
+    /* Clause 4: undisclosed presupposition-smuggled admin surcharge */
+    spec_out->clauses[3].clause_id = 4U;
+    spec_out->clauses[3].kind = (uint8_t)SOUND_CLAUSE_PRESUP_SMUGGLE;
+    spec_out->clauses[3].disclosed = UINT8_C(0);
+    spec_out->clauses[3].b4_truth = (uint8_t)SOUND_B4_TRUE;
+    spec_out->clauses[3].base_loss = UINT64_C(4000);
+    spec_out->clauses[3].extra_drift = UINT64_C(8000);
+
+    /* Clause 5: Chisholm default acceleration + unconscionable exit penalty */
+    spec_out->clauses[4].clause_id = 5U;
+    spec_out->clauses[4].kind = (uint8_t)SOUND_CLAUSE_CHISHOLM_DEFAULT;
+    spec_out->clauses[4].disclosed = UINT8_C(1);
+    spec_out->clauses[4].b4_truth = (uint8_t)SOUND_B4_TRUE;
+    spec_out->clauses[4].extra_drift = UINT64_C(30000);
+    spec_out->clauses[4].exit_fee = UINT64_C(12000);
+    spec_out->clauses[4].cons_penalty = UINT64_C(50000);
+    spec_out->clauses[4].inst_penalty = UINT64_C(0);
+
+    sound_audit_contract(spec_out, audit_out);
+}

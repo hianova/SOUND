@@ -1,0 +1,39 @@
+{
+  "contract_name": "Housing_Lease_Trap_Fair_2026",
+  "seed": "0x4C454153455F3032",
+  "max_loss_cap": 18000,
+  "max_exit_fee": 1500,
+  "protected_mask": 7,
+  "max_asym_num": 2,
+  "max_asym_den": 1,
+  "clauses": [
+    {
+      "clause_id": 1,
+      "title": "Disclosed annual fixed rent",
+      "kind": "base_fee",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 15000,
+      "extra_drift": 0,
+      "exit_fee": 1500,
+      "cons_penalty": 1500,
+      "inst_penalty": 1500,
+      "sheaf_cycle": false
+    },
+    {
+      "clause_id": 2,
+      "title": "Disclosed fixed building maintenance schedule",
+      "kind": "reciprocity",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 2000,
+      "extra_drift": 0,
+      "exit_fee": 1200,
+      "cons_penalty": 1500,
+      "inst_penalty": 1500,
+      "sheaf_cycle": false
+    }
+  ]
+}

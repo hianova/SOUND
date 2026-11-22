@@ -1,0 +1,67 @@
+{
+  "contract_name": "Joint_Guarantor_Loan_Predatory_2026",
+  "seed": "0x4A4F494E545F3031",
+  "max_loss_cap": 50000,
+  "max_exit_fee": 3000,
+  "protected_mask": 15,
+  "max_asym_num": 2,
+  "max_asym_den": 1,
+  "clauses": [
+    {
+      "clause_id": 1,
+      "title": "Disclosed capped personal-guarantee slice",
+      "kind": "base_fee",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 45000,
+      "extra_drift": 0,
+      "exit_fee": 2000,
+      "cons_penalty": 1000,
+      "inst_penalty": 1000,
+      "sheaf_cycle": false
+    },
+    {
+      "clause_id": 2,
+      "title": "Chisholm contrary-to-duty full debt acceleration & punitive default interest",
+      "kind": "chisholm_default",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 0,
+      "extra_drift": 80000,
+      "exit_fee": 0,
+      "cons_penalty": 30000,
+      "inst_penalty": 100,
+      "sheaf_cycle": false
+    },
+    {
+      "clause_id": 3,
+      "title": "Unilateral cross-collateralization waiver piercing guarantor homestead immunity",
+      "kind": "unilateral_power",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 8,
+      "base_loss": 0,
+      "extra_drift": 35000,
+      "exit_fee": 0,
+      "cons_penalty": 0,
+      "inst_penalty": 0,
+      "sheaf_cycle": false
+    },
+    {
+      "clause_id": 4,
+      "title": "Undisclosed collection & prepayment termination rider",
+      "kind": "presup_smuggle",
+      "disclosed": false,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 4000,
+      "extra_drift": 0,
+      "exit_fee": 6500,
+      "cons_penalty": 0,
+      "inst_penalty": 0,
+      "sheaf_cycle": false
+    }
+  ]
+}

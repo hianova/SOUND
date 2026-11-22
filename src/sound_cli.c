@@ -1343,6 +1343,178 @@ static uint32_t sound_test_t18_projection_and_forces(void) {
     return fails;
 }
 
+static uint32_t sound_test_t19_contract_drift(void) {
+    uint32_t fails = UINT32_C(0);
+    sound_contract_spec_t spec;
+    sound_contract_audit_t audit;
+
+    /* 1. Clean fair contract certifies */
+    sound_zero_bytes(&spec, sizeof(spec));
+    spec.max_loss_cap = UINT64_C(10000);
+    spec.max_exit_fee = UINT64_C(1500);
+    spec.protected_mask = UINT64_C(0xF);
+    spec.max_asym_num = UINT64_C(2);
+    spec.max_asym_den = UINT64_C(1);
+    spec.num_clauses = 2U;
+    spec.clauses[0].clause_id = 1U;
+    spec.clauses[0].kind = (uint8_t)SOUND_CLAUSE_BASE_FEE;
+    spec.clauses[0].disclosed = UINT8_C(1);
+    spec.clauses[0].b4_truth = (uint8_t)SOUND_B4_TRUE;
+    spec.clauses[0].base_loss = UINT64_C(6000);
+    spec.clauses[0].exit_fee = UINT64_C(500);
+    spec.clauses[0].cons_penalty = UINT64_C(200);
+    spec.clauses[0].inst_penalty = UINT64_C(100);
+    spec.clauses[1].clause_id = 2U;
+    spec.clauses[1].kind = (uint8_t)SOUND_CLAUSE_RECIPROCITY;
+    spec.clauses[1].disclosed = UINT8_C(1);
+    spec.clauses[1].b4_truth = (uint8_t)SOUND_B4_TRUE;
+    spec.clauses[1].base_loss = UINT64_C(3000);
+    spec.clauses[1].exit_fee = UINT64_C(1000);
+    spec.clauses[1].cons_penalty = UINT64_C(400);
+    spec.clauses[1].inst_penalty = UINT64_C(200);
+    sound_audit_contract(&spec, &audit);
+    if (audit.certified != UINT32_C(1) || audit.viol_flags != UINT32_C(0) ||
+        audit.num_predatory_clauses != UINT32_C(0) || audit.benefit_drift != (int64_t)(-1000) ||
+        !sound_cert_emit_contract_fir(&audit, NULL, &g_cert_ws) || !g_cert_ws.ir_eval_ok) {
+        fails++;
+    }
+
+    /* 2. Single-fault isolation across every violation bit */
+    sound_contract_spec_t s;
+    sound_zero_bytes(&s, sizeof(s));
+    s = spec;
+    s.num_clauses = 3U;
+
+    /* IMMUNITY_BREACH */
+    sound_zero_bytes(&s.clauses[2], sizeof(s.clauses[2]));
+    s.clauses[2].clause_id = 3U;
+    s.clauses[2].kind = (uint8_t)SOUND_CLAUSE_UNILATERAL_POWER;
+    s.clauses[2].disclosed = UINT8_C(1);
+    s.clauses[2].b4_truth = (uint8_t)SOUND_B4_TRUE;
+    s.clauses[2].target_mask = UINT64_C(0x2);
+    sound_audit_contract(&s, &audit);
+    if (audit.certified != UINT32_C(0) ||
+        (audit.viol_flags & (uint32_t)SOUND_CVIOL_IMMUNITY_BREACH) == UINT32_C(0) ||
+        audit.repaired_certified != UINT32_C(1)) {
+        fails++;
+    }
+
+    /* UNINFORMED_AMBIG via B4_BOT and B4_TOP */
+    sound_zero_bytes(&s.clauses[2], sizeof(s.clauses[2]));
+    s.clauses[2].clause_id = 3U;
+    s.clauses[2].kind = (uint8_t)SOUND_CLAUSE_BASE_FEE;
+    s.clauses[2].disclosed = UINT8_C(1);
+    s.clauses[2].b4_truth = (uint8_t)SOUND_B4_BOT;
+    sound_audit_contract(&s, &audit);
+    if (audit.certified != UINT32_C(0) ||
+        (audit.viol_flags & (uint32_t)SOUND_CVIOL_UNINFORMED_AMBIG) == UINT32_C(0)) {
+        fails++;
+    }
+    s.clauses[2].b4_truth = (uint8_t)SOUND_B4_TOP;
+    sound_audit_contract(&s, &audit);
+    if (audit.certified != UINT32_C(0) ||
+        (audit.viol_flags & (uint32_t)SOUND_CVIOL_UNINFORMED_AMBIG) == UINT32_C(0)) {
+        fails++;
+    }
+
+    /* PRESUP_SMUGGLE */
+    sound_zero_bytes(&s.clauses[2], sizeof(s.clauses[2]));
+    s.clauses[2].clause_id = 3U;
+    s.clauses[2].kind = (uint8_t)SOUND_CLAUSE_BASE_FEE;
+    s.clauses[2].disclosed = UINT8_C(0);
+    s.clauses[2].b4_truth = (uint8_t)SOUND_B4_TRUE;
+    s.clauses[2].base_loss = UINT64_C(500);
+    sound_audit_contract(&s, &audit);
+    if (audit.certified != UINT32_C(0) ||
+        (audit.viol_flags & (uint32_t)SOUND_CVIOL_PRESUP_SMUGGLE) == UINT32_C(0)) {
+        fails++;
+    }
+
+    /* CHISHOLM_CASCADE */
+    sound_zero_bytes(&s.clauses[2], sizeof(s.clauses[2]));
+    s.clauses[2].clause_id = 3U;
+    s.clauses[2].kind = (uint8_t)SOUND_CLAUSE_CHISHOLM_DEFAULT;
+    s.clauses[2].disclosed = UINT8_C(1);
+    s.clauses[2].b4_truth = (uint8_t)SOUND_B4_TRUE;
+    s.clauses[2].extra_drift = UINT64_C(250);
+    sound_audit_contract(&s, &audit);
+    if (audit.certified != UINT32_C(0) ||
+        (audit.viol_flags & (uint32_t)SOUND_CVIOL_CHISHOLM_CASCADE) == UINT32_C(0)) {
+        fails++;
+    }
+
+    /* UNCONSCIONABLE */
+    sound_zero_bytes(&s.clauses[2], sizeof(s.clauses[2]));
+    s.clauses[2].clause_id = 3U;
+    s.clauses[2].kind = (uint8_t)SOUND_CLAUSE_RECIPROCITY;
+    s.clauses[2].disclosed = UINT8_C(1);
+    s.clauses[2].b4_truth = (uint8_t)SOUND_B4_TRUE;
+    s.clauses[2].cons_penalty = UINT64_C(201);
+    s.clauses[2].inst_penalty = UINT64_C(100);
+    sound_audit_contract(&s, &audit);
+    if (audit.certified != UINT32_C(0) ||
+        (audit.viol_flags & (uint32_t)SOUND_CVIOL_UNCONSCIONABLE) == UINT32_C(0)) {
+        fails++;
+    }
+
+    /* SHEAF_CONFLICT */
+    sound_zero_bytes(&s.clauses[2], sizeof(s.clauses[2]));
+    s.clauses[2].clause_id = 3U;
+    s.clauses[2].kind = (uint8_t)SOUND_CLAUSE_BASE_FEE;
+    s.clauses[2].disclosed = UINT8_C(1);
+    s.clauses[2].b4_truth = (uint8_t)SOUND_B4_TRUE;
+    s.clauses[2].sheaf_cycle = UINT8_C(1);
+    sound_audit_contract(&s, &audit);
+    if (audit.certified != UINT32_C(0) ||
+        (audit.viol_flags & (uint32_t)SOUND_CVIOL_SHEAF_CONFLICT) == UINT32_C(0)) {
+        fails++;
+    }
+
+    /* EXIT_TRAP */
+    sound_zero_bytes(&s.clauses[2], sizeof(s.clauses[2]));
+    s.clauses[2].clause_id = 3U;
+    s.clauses[2].kind = (uint8_t)SOUND_CLAUSE_BASE_FEE;
+    s.clauses[2].disclosed = UINT8_C(1);
+    s.clauses[2].b4_truth = (uint8_t)SOUND_B4_TRUE;
+    s.clauses[2].exit_fee = UINT64_C(1501);
+    sound_audit_contract(&s, &audit);
+    if (audit.certified != UINT32_C(0) ||
+        (audit.viol_flags & (uint32_t)SOUND_CVIOL_EXIT_TRAP) == UINT32_C(0)) {
+        fails++;
+    }
+
+    /* BENEFIT_DRIFT via cap overflow + max_asym_den==0 fail-closed */
+    sound_zero_bytes(&s.clauses[2], sizeof(s.clauses[2]));
+    s.clauses[2].clause_id = 3U;
+    s.clauses[2].kind = (uint8_t)SOUND_CLAUSE_BASE_FEE;
+    s.clauses[2].disclosed = UINT8_C(1);
+    s.clauses[2].b4_truth = (uint8_t)SOUND_B4_TRUE;
+    s.clauses[2].base_loss = UINT64_C(2000);
+    sound_audit_contract(&s, &audit);
+    if (audit.certified != UINT32_C(0) ||
+        (audit.viol_flags & (uint32_t)SOUND_CVIOL_BENEFIT_DRIFT) == UINT32_C(0) ||
+        audit.benefit_drift != (int64_t)1000) {
+        fails++;
+    }
+    s = spec;
+    s.max_asym_den = UINT64_C(0);
+    sound_audit_contract(&s, &audit);
+    if (audit.certified != UINT32_C(0) || audit.repaired_certified != UINT32_C(0) ||
+        (audit.viol_flags & (uint32_t)SOUND_CVIOL_UNCONSCIONABLE) == UINT32_C(0)) {
+        fails++;
+    }
+
+    /* 3. Hunt witness + FIR gate */
+    sound_hunt_contract_drift(UINT64_C(0x534F554E445F3330), &spec, &audit);
+    if (audit.certified != UINT32_C(0) || audit.repaired_certified != UINT32_C(1) ||
+        audit.num_predatory_clauses != UINT32_C(4) || audit.benefit_drift <= (int64_t)0 ||
+        (audit.viol_flags & UINT32_C(0xBF)) != UINT32_C(0xBF) ||
+        !sound_cert_emit_contract_fir(&audit, NULL, &g_cert_ws) || !g_cert_ws.ir_eval_ok) {
+        fails++;
+    }
+    return fails;
+}
+
 /* ============================================================================
  * File I/O & CLI Commands
  * ============================================================================ */
@@ -1419,7 +1591,7 @@ static void sound_derive_prog_name(char dst[24], const char *path) {
 static SoundArena g_cli_arena;
 
 static int sound_cmd_selftest(void) {
-    uint32_t f[18];
+    uint32_t f[19];
     f[0] = sound_test_t1_kernel();
     f[1] = sound_test_t2_hohfeld_and_rollback();
     f[2] = sound_test_t3_frontend_gate();
@@ -1438,20 +1610,22 @@ static int sound_cmd_selftest(void) {
     f[15] = sound_test_t16_chisholm_norm_trap();
     f[16] = sound_test_t17_vendler_aspect();
     f[17] = sound_test_t18_projection_and_forces();
+    f[18] = sound_test_t19_contract_drift();
 
     uint32_t tot = UINT32_C(0);
-    for (uint32_t i = 0U; i < 18U; i++) {
+    for (uint32_t i = 0U; i < 19U; i++) {
         tot += f[i];
     }
     printf("[selftest] T1..T10(kernel)=%s T11(bilat)=%s T12(paradox)=%s T13(sheaf_cls)=%s "
            "T14(sheaf_h1)=%s T15(hohfeld_v4)=%s T16(chisholm_trap)=%s T17(aspect)=%s "
-           "T18(presup_force)=%s | fails=%u\n",
+           "T18(presup_force)=%s T19(contract)=%s | fails=%u\n",
            (f[0] + f[1] + f[2] + f[3] + f[4] + f[5] + f[6] + f[7] + f[8] + f[9]) == 0U ? "PASS"
                                                                                        : "FAIL",
            f[10] == 0U ? "PASS" : "FAIL", f[11] == 0U ? "PASS" : "FAIL",
            f[12] == 0U ? "PASS" : "FAIL", f[13] == 0U ? "PASS" : "FAIL",
            f[14] == 0U ? "PASS" : "FAIL", f[15] == 0U ? "PASS" : "FAIL",
-           f[16] == 0U ? "PASS" : "FAIL", f[17] == 0U ? "PASS" : "FAIL", tot);
+           f[16] == 0U ? "PASS" : "FAIL", f[17] == 0U ? "PASS" : "FAIL",
+           f[18] == 0U ? "PASS" : "FAIL", tot);
     return (tot == 0U) ? 0 : 1;
 }
 
@@ -1881,20 +2055,440 @@ static int sound_cmd_hunt(int argc, char **argv) {
                (unsigned)w.cond_true_presup, (unsigned long long)w.merkle, g_cert_ws.wire_len);
         return 0;
     }
+    if (sound_cstr_eq(mode, "contract-drift")) {
+        static sound_contract_spec_t spec;
+        static sound_contract_audit_t audit;
+        sound_hunt_contract_drift(seed, &spec, &audit);
+        if (!sound_cert_emit_contract_fir(&audit, out_fir, &g_cert_ws)) {
+            return 1;
+        }
+        if (out_lean != NULL && !sound_cert_emit_contract_lean(&spec, &audit, out_lean)) {
+            return 1;
+        }
+        if (out_json != NULL &&
+            !sound_cert_emit_contract_json(&spec, &audit, &g_cert_ws, out_json)) {
+            return 1;
+        }
+        printf("[hunt contract-drift] cert=%u drift=%lld pred=%u rep_cert=%u merkle=0x%016llx "
+               "fir=%zuB\n",
+               audit.certified, (long long)audit.benefit_drift, audit.num_predatory_clauses,
+               audit.repaired_certified, (unsigned long long)audit.merkle, g_cert_ws.wire_len);
+        return 0;
+    }
     fprintf(stderr, "ERROR: unknown hunt mode '%s'\n", mode);
     return 1;
 }
 
+static bool sound_json_is_ws(char ch) {
+    return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r';
+}
+
+static const char *sound_json_skip_ws(const char *p, const char *end) {
+    while (p < end && sound_json_is_ws(*p)) {
+        p++;
+    }
+    return p;
+}
+
+static const char *sound_json_skip_value(const char *p, const char *end) {
+    p = sound_json_skip_ws(p, end);
+    if (p >= end) {
+        return end;
+    }
+    if (*p == '"') {
+        p++;
+        while (p < end) {
+            if (*p == '\\' && (p + 1) < end) {
+                p += 2;
+                continue;
+            }
+            if (*p == '"') {
+                return p + 1;
+            }
+            p++;
+        }
+        return end;
+    }
+    if (*p == '{' || *p == '[') {
+        int depth = 0;
+        bool in_str = false;
+        while (p < end) {
+            if (in_str) {
+                if (*p == '\\' && (p + 1) < end) {
+                    p += 2;
+                    continue;
+                }
+                if (*p == '"') {
+                    in_str = false;
+                }
+            } else {
+                if (*p == '"') {
+                    in_str = true;
+                } else if (*p == '{' || *p == '[') {
+                    depth++;
+                } else if (*p == '}' || *p == ']') {
+                    depth--;
+                    if (depth == 0) {
+                        return p + 1;
+                    }
+                }
+            }
+            p++;
+        }
+        return end;
+    }
+    while (p < end && *p != ',' && *p != '}' && *p != ']' && !sound_json_is_ws(*p)) {
+        p++;
+    }
+    return p;
+}
+
+static const char *sound_json_obj_get(const char *obj_start, const char *obj_end, const char *key) {
+    const char *p = sound_json_skip_ws(obj_start, obj_end);
+    if (p >= obj_end || *p != '{') {
+        return NULL;
+    }
+    p++;
+    size_t klen = 0U;
+    while (key[klen] != '\0') {
+        klen++;
+    }
+    while (p < obj_end) {
+        p = sound_json_skip_ws(p, obj_end);
+        if (p >= obj_end || *p == '}') {
+            return NULL;
+        }
+        if (*p == ',') {
+            p++;
+            continue;
+        }
+        if (*p != '"') {
+            return NULL;
+        }
+        p++;
+        const char *kstart = p;
+        while (p < obj_end && *p != '"') {
+            if (*p == '\\' && (p + 1) < obj_end) {
+                p += 2;
+                continue;
+            }
+            p++;
+        }
+        if (p >= obj_end) {
+            return NULL;
+        }
+        size_t tok_len = (size_t)(p - kstart);
+        bool match = (tok_len == klen);
+        if (match) {
+            for (size_t i = 0U; i < klen; i++) {
+                if (kstart[i] != key[i]) {
+                    match = false;
+                    break;
+                }
+            }
+        }
+        p++; /* skip '"' */
+        p = sound_json_skip_ws(p, obj_end);
+        if (p >= obj_end || *p != ':') {
+            return NULL;
+        }
+        p++;
+        p = sound_json_skip_ws(p, obj_end);
+        if (match) {
+            return p;
+        }
+        p = sound_json_skip_value(p, obj_end);
+    }
+    return NULL;
+}
+
+static bool sound_json_parse_u64_val(const char *p, const char *end, uint64_t *out) {
+    if (p == NULL || p >= end) {
+        return false;
+    }
+    p = sound_json_skip_ws(p, end);
+    if (*p == '"') {
+        p++;
+        const char *q = p;
+        char buf[32];
+        size_t i = 0U;
+        while (q < end && *q != '"' && i < 31U) {
+            buf[i++] = *q++;
+        }
+        if (q >= end || *q != '"') {
+            return false;
+        }
+        buf[i] = '\0';
+        return sound_parse_u64(buf, out);
+    }
+    char buf[32];
+    size_t i = 0U;
+    while (p < end && i < 31U && *p != ',' && *p != '}' && *p != ']' && !sound_json_is_ws(*p)) {
+        buf[i++] = *p++;
+    }
+    if (i == 0U) {
+        return false;
+    }
+    buf[i] = '\0';
+    return sound_parse_u64(buf, out);
+}
+
+static bool sound_json_parse_bool_val(const char *p, const char *end, uint8_t *out) {
+    if (p == NULL || p >= end) {
+        return false;
+    }
+    p = sound_json_skip_ws(p, end);
+    if ((p + 4) <= end && p[0] == 't' && p[1] == 'r' && p[2] == 'u' && p[3] == 'e') {
+        *out = UINT8_C(1);
+        return true;
+    }
+    if ((p + 5) <= end && p[0] == 'f' && p[1] == 'a' && p[2] == 'l' && p[3] == 's' && p[4] == 'e') {
+        *out = UINT8_C(0);
+        return true;
+    }
+    uint64_t v = UINT64_C(0);
+    if (sound_json_parse_u64_val(p, end, &v)) {
+        *out = (v != UINT64_C(0)) ? UINT8_C(1) : UINT8_C(0);
+        return true;
+    }
+    return false;
+}
+
+static bool sound_json_read_str_val(const char *p, const char *end, char *dst, size_t cap) {
+    if (p == NULL || p >= end || cap == 0U) {
+        return false;
+    }
+    p = sound_json_skip_ws(p, end);
+    if (p >= end || *p != '"') {
+        return false;
+    }
+    p++;
+    size_t i = 0U;
+    while (p < end && *p != '"') {
+        if (i + 1U < cap) {
+            dst[i++] = *p;
+        }
+        p++;
+    }
+    dst[i] = '\0';
+    return (p < end && *p == '"');
+}
+
+static uint8_t sound_parse_clause_kind_token(const char *p, const char *end) {
+    char s[40];
+    if (sound_json_read_str_val(p, end, s, sizeof(s))) {
+        if (sound_cstr_eq(s, "unilateral_power") || sound_cstr_eq(s, "unilateralPower")) {
+            return (uint8_t)SOUND_CLAUSE_UNILATERAL_POWER;
+        }
+        if (sound_cstr_eq(s, "ambiguous_obligation") || sound_cstr_eq(s, "ambiguousObligation")) {
+            return (uint8_t)SOUND_CLAUSE_AMBIGUOUS_OBLIGATION;
+        }
+        if (sound_cstr_eq(s, "presup_smuggle") || sound_cstr_eq(s, "presupSmuggle")) {
+            return (uint8_t)SOUND_CLAUSE_PRESUP_SMUGGLE;
+        }
+        if (sound_cstr_eq(s, "chisholm_default") || sound_cstr_eq(s, "chisholmDefault")) {
+            return (uint8_t)SOUND_CLAUSE_CHISHOLM_DEFAULT;
+        }
+        if (sound_cstr_eq(s, "reciprocity")) {
+            return (uint8_t)SOUND_CLAUSE_RECIPROCITY;
+        }
+        return (uint8_t)SOUND_CLAUSE_BASE_FEE;
+    }
+    uint64_t v = UINT64_C(0);
+    if (sound_json_parse_u64_val(p, end, &v) && v <= UINT64_C(5)) {
+        return (uint8_t)v;
+    }
+    return (uint8_t)SOUND_CLAUSE_BASE_FEE;
+}
+
+static uint8_t sound_parse_b4_token(const char *p, const char *end) {
+    char s[24];
+    if (sound_json_read_str_val(p, end, s, sizeof(s))) {
+        if (sound_cstr_eq(s, "BOT") || sound_cstr_eq(s, "bot")) {
+            return (uint8_t)SOUND_B4_BOT;
+        }
+        if (sound_cstr_eq(s, "FALSE") || sound_cstr_eq(s, "false")) {
+            return (uint8_t)SOUND_B4_FALSE;
+        }
+        if (sound_cstr_eq(s, "TOP") || sound_cstr_eq(s, "top")) {
+            return (uint8_t)SOUND_B4_TOP;
+        }
+        return (uint8_t)SOUND_B4_TRUE;
+    }
+    uint64_t v = UINT64_C(2);
+    if (sound_json_parse_u64_val(p, end, &v)) {
+        return (uint8_t)(v & UINT64_C(3));
+    }
+    return (uint8_t)SOUND_B4_TRUE;
+}
+
+static bool sound_parse_contract_json_file(const char *path, sound_contract_spec_t *spec) {
+    static char json_buf[32768];
+    if (path == NULL || spec == NULL) {
+        return false;
+    }
+    FILE *fp = fopen(path, "rb");
+    if (fp == NULL) {
+        return false;
+    }
+    size_t len = fread(json_buf, 1U, sizeof(json_buf) - 1U, fp);
+    int err = ferror(fp);
+    fclose(fp);
+    if (err != 0 || len == 0U || len >= sizeof(json_buf) - 1U) {
+        return false;
+    }
+    json_buf[len] = '\0';
+
+    const char *root = json_buf;
+    const char *end = json_buf + len;
+    root = sound_json_skip_ws(root, end);
+    if (root >= end || *root != '{') {
+        return false;
+    }
+
+    sound_zero_bytes(spec, sizeof(*spec));
+    spec->max_asym_num = UINT64_C(2);
+    spec->max_asym_den = UINT64_C(1);
+
+    uint64_t tmp = UINT64_C(0);
+    if (sound_json_parse_u64_val(sound_json_obj_get(root, end, "seed"), end, &tmp)) {
+        spec->seed = tmp;
+    }
+    if (sound_json_parse_u64_val(sound_json_obj_get(root, end, "max_loss_cap"), end, &tmp)) {
+        spec->max_loss_cap = tmp;
+    }
+    if (sound_json_parse_u64_val(sound_json_obj_get(root, end, "max_exit_fee"), end, &tmp)) {
+        spec->max_exit_fee = tmp;
+    }
+    if (sound_json_parse_u64_val(sound_json_obj_get(root, end, "protected_mask"), end, &tmp)) {
+        spec->protected_mask = tmp;
+    }
+    if (sound_json_parse_u64_val(sound_json_obj_get(root, end, "max_asym_num"), end, &tmp)) {
+        spec->max_asym_num = tmp;
+    }
+    if (sound_json_parse_u64_val(sound_json_obj_get(root, end, "max_asym_den"), end, &tmp)) {
+        spec->max_asym_den = tmp;
+    }
+
+    const char *arr = sound_json_obj_get(root, end, "clauses");
+    if (arr == NULL || *arr != '[') {
+        return false;
+    }
+    const char *arr_end = sound_json_skip_value(arr, end);
+    const char *cur = arr + 1;
+    while (cur < arr_end) {
+        cur = sound_json_skip_ws(cur, arr_end);
+        if (cur >= arr_end || *cur == ']') {
+            break;
+        }
+        if (*cur == ',') {
+            cur++;
+            continue;
+        }
+        if (*cur != '{') {
+            return false;
+        }
+        const char *c_end = sound_json_skip_value(cur, arr_end);
+        if (spec->num_clauses >= SOUND_CONTRACT_MAX_CLAUSES) {
+            spec->num_clauses++;
+            break;
+        }
+        sound_contract_clause_t *cl = &spec->clauses[spec->num_clauses];
+        cl->clause_id = spec->num_clauses + UINT32_C(1);
+        cl->disclosed = UINT8_C(1);
+        cl->b4_truth = (uint8_t)SOUND_B4_TRUE;
+        cl->sheaf_cycle = UINT8_C(0);
+
+        if (sound_json_parse_u64_val(sound_json_obj_get(cur, c_end, "clause_id"), c_end, &tmp)) {
+            cl->clause_id = (uint32_t)tmp;
+        }
+        const char *kp = sound_json_obj_get(cur, c_end, "kind");
+        if (kp != NULL) {
+            cl->kind = sound_parse_clause_kind_token(kp, c_end);
+        }
+        uint8_t btmp = UINT8_C(0);
+        if (sound_json_parse_bool_val(sound_json_obj_get(cur, c_end, "disclosed"), c_end, &btmp)) {
+            cl->disclosed = btmp;
+        }
+        const char *b4p = sound_json_obj_get(cur, c_end, "b4_truth");
+        if (b4p != NULL) {
+            cl->b4_truth = sound_parse_b4_token(b4p, c_end);
+        }
+        if (sound_json_parse_bool_val(sound_json_obj_get(cur, c_end, "sheaf_cycle"), c_end,
+                                      &btmp)) {
+            cl->sheaf_cycle = btmp;
+        }
+        if (sound_json_parse_u64_val(sound_json_obj_get(cur, c_end, "target_mask"), c_end, &tmp)) {
+            cl->target_mask = tmp;
+        }
+        if (sound_json_parse_u64_val(sound_json_obj_get(cur, c_end, "base_loss"), c_end, &tmp)) {
+            cl->base_loss = tmp;
+        }
+        if (sound_json_parse_u64_val(sound_json_obj_get(cur, c_end, "extra_drift"), c_end, &tmp)) {
+            cl->extra_drift = tmp;
+        }
+        if (sound_json_parse_u64_val(sound_json_obj_get(cur, c_end, "exit_fee"), c_end, &tmp)) {
+            cl->exit_fee = tmp;
+        }
+        if (sound_json_parse_u64_val(sound_json_obj_get(cur, c_end, "cons_penalty"), c_end, &tmp)) {
+            cl->cons_penalty = tmp;
+        }
+        if (sound_json_parse_u64_val(sound_json_obj_get(cur, c_end, "inst_penalty"), c_end, &tmp)) {
+            cl->inst_penalty = tmp;
+        }
+        spec->num_clauses++;
+        cur = c_end;
+    }
+    return spec->num_clauses > UINT32_C(0);
+}
+
+static int sound_cmd_audit_contract(int argc, char **argv) {
+    const char *in_json = argv[2];
+    const char *out_lean = sound_parse_opt(argc, argv, 3, "--out-lean");
+    const char *out_fir = sound_parse_opt(argc, argv, 3, "--out-fir");
+    const char *out_json = sound_parse_opt(argc, argv, 3, "--out-json");
+
+    static sound_contract_spec_t spec;
+    static sound_contract_audit_t audit;
+    if (!sound_parse_contract_json_file(in_json, &spec)) {
+        fprintf(stderr, "ERROR: unable to parse contract JSON '%s'\n", in_json);
+        return 1;
+    }
+    sound_audit_contract(&spec, &audit);
+    if (!sound_cert_emit_contract_fir(&audit, out_fir, &g_cert_ws)) {
+        fprintf(stderr, "ERROR: contract FIR generation/eval failed\n");
+        return 1;
+    }
+    if (out_lean != NULL && !sound_cert_emit_contract_lean(&spec, &audit, out_lean)) {
+        fprintf(stderr, "ERROR: unable to write '%s'\n", out_lean);
+        return 1;
+    }
+    if (out_json != NULL && !sound_cert_emit_contract_json(&spec, &audit, &g_cert_ws, out_json)) {
+        fprintf(stderr, "ERROR: unable to write '%s'\n", out_json);
+        return 1;
+    }
+    printf("[audit-contract] %s | verdict=%s viol=0x%x base=%llu worst=%llu drift=%lld "
+           "pred=%u rep_cert=%u fir=%zuB\n",
+           in_json, (audit.certified != UINT32_C(0)) ? "CERTIFIED" : "VETOED", audit.viol_flags,
+           (unsigned long long)audit.base_loss_sum, (unsigned long long)audit.worst_case_loss,
+           (long long)audit.benefit_drift, audit.num_predatory_clauses, audit.repaired_certified,
+           g_cert_ws.wire_len);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage:\n  sound selftest\n  sound verify <arena.snd> [--json]\n"
-                        "  sound repair <arena.snd> [seed]\n"
-                        "  sound lift-fir <arena.snd> <out.fir> [--repaired [seed]]\n"
-                        "  sound lift-policy-fir <arena.snd> <out.fir>\n"
-                        "  sound classify-<bilattice|sheaf|hohfeld|projection> [--out-json <p>]\n"
-                        "  sound hunt <paradox-min|sheaf-h1|chisholm|norm-trap|aspect-firewall|"
-                        "presup-filter> [--seed <u64>] [--out-lean <p>] [--out-fir <p>] "
-                        "[--out-json <p>]\n");
+        fprintf(stderr,
+                "Usage:\n  sound selftest\n  sound verify <arena.snd> [--json]\n"
+                "  sound repair <arena.snd> [seed]\n"
+                "  sound lift-fir <arena.snd> <out.fir> [--repaired [seed]]\n"
+                "  sound lift-policy-fir <arena.snd> <out.fir>\n"
+                "  sound classify-<bilattice|sheaf|hohfeld|projection> [--out-json <p>]\n"
+                "  sound hunt <paradox-min|sheaf-h1|chisholm|norm-trap|aspect-firewall|"
+                "presup-filter|contract-drift> [--seed <u64>] [--out-lean <p>] [--out-fir <p>] "
+                "[--out-json <p>]\n"
+                "  sound audit-contract <contract.json> [--out-lean <p>] [--out-fir <p>] "
+                "[--out-json <p>]\n");
         return 1;
     }
     if (sound_cstr_eq(argv[1], "selftest")) {
@@ -1927,6 +2521,9 @@ int main(int argc, char **argv) {
     }
     if (sound_cstr_eq(argv[1], "hunt") && argc >= 3) {
         return sound_cmd_hunt(argc, argv);
+    }
+    if (sound_cstr_eq(argv[1], "audit-contract") && argc >= 3) {
+        return sound_cmd_audit_contract(argc, argv);
     }
     fprintf(stderr, "ERROR: invalid arguments\n");
     return 1;

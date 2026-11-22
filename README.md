@@ -2,7 +2,7 @@
 
 **Pure Foundational Theory & Ring-0 Pure-GPR Epistemic, Cohomological, Normative & Linguistic Discovery Engine**
 
-`SOUND v3.0.0` unifies non-monotonic argumentation, discrete sheaf cohomology, complete Hohfeldian legal algebra, and formal linguistics on top of `FLOW` (`Flow.Core`, `Flow.Schema`, `Flow.Morphism`, `"FIR1"` wire IR) across four formally verified pillars (`126` Lean 4 theorems, `0 sorryAx`):
+`SOUND v3.0.0` unifies non-monotonic argumentation, discrete sheaf cohomology, complete Hohfeldian legal algebra, formal linguistics, and asymmetric contract informed-consent verification on top of `FLOW` (`Flow.Core`, `Flow.Schema`, `Flow.Morphism`, `"FIR1"` wire IR) across five formally verified pillars (`142` Lean 4 theorems, `0 sorryAx`, `0 Lean.ofReduceBool`):
 
 1. **Non-Monotonic Bilattice Logic (`Sound.Bilattice`, `classify-bilattice`, `paradox-min`)**:
    - Belnap 4-valued bilattice $B_4 = (\{\bot, \mathbf{F}, \mathbf{T}, \top\}, \le_t, \le_k)$ with exact Klein-$V_4$ involution symmetry (`¬`, conflict flip `c`), interlaced De Morgan distributivity, alternating-fixpoint operator $\Gamma^2$ (`I*`, `P*`), tag-stratified Hume No-Go firewall (`Is -> Ought` / `Ought -> Is`), evidential leaf quarantine, and bounded SipHash-protected admission guard.
@@ -25,15 +25,19 @@
    - 4-valued Presupposition Projection algebra (`Hole` negation / `Plug` irrealis / Karttunen–Heim `Filter` conditional) and Classical Bivalent Truth-Gap No-Go (`classical_bivalent_truth_gap_nogo`), classifying all `256` unary $B_4 \to B_4$ operators (`10` involutive, `36` $t$-antitone, `36` $k$-monotone, `1` unique classical negation), all `16` Hole pairs (`12` Strawson truth-gap pairs), and all `256` conditional pairs.
    - 5 Illocutionary Force Endofunctors (`Assertion`, `Query`, `Irrealis`, `Directive`, `Declarative`) preserving epistemic/normative/modal conservation laws.
 
+5. **Asymmetric Contract Informed-Consent & Benefit-Drift Verifier (`Sound.Contract`, `audit-contract`, `hunt contract-drift`)**:
+   - Formalizes consumer–institution asymmetric contracts (`SummarySpec` + `ContractClause` + quantified `∀ act : AdversarialAction`) with fail-closed `.vetoed` enforcement across immunity breaches (`protectedMask`), undefined/conflicting `B4` obligations (`0#2`/`3#2`), undisclosed fine-print smuggling, Chisholm default acceleration cascades, discrete sheaf cycle traps, exit-fee traps, `__int128` unconscionability penalty ratios (`consPenalty * maxAsymDen > instPenalty * maxAsymNum`), and positive Benefit Drift (`worstCaseLoss - maxLossCap > 0`).
+   - Proves universal adversarial loss soundness (`certified_bounds_adversarial_loss`, `certified_zero_benefit_drift`, `repair_eliminates_predatory_clauses`) and audits 4 paired commercial/consumer contract families in [`benchmarks/contracts/`](benchmarks/contracts/) via [`experiments/contract_informed_consent_audit.py`](experiments/contract_informed_consent_audit.py) (`4/4` predatory `VETOED`, `4/4` fair `CERTIFIED`, `8/8` live Lean certificates / `24` theorems `leanchecker` PASS).
+
 ## Architecture
 
-- [`Sound/Bilattice.lean`](Sound/Bilattice.lean), [`Sound/Sheaf.lean`](Sound/Sheaf.lean), [`Sound/Hohfeld.lean`](Sound/Hohfeld.lean), [`Sound/Linguistics.lean`](Sound/Linguistics.lean), [`Sound/Theory.lean`](Sound/Theory.lean): Pure Lean 4 formal foundations (`65 + 18 + 22 + 21 = 126` top-level theorems, `0 sorryAx`), importing only Lean stdlib (`Std.Tactic.BVDecide`).
+- [`Sound/Bilattice.lean`](Sound/Bilattice.lean), [`Sound/Sheaf.lean`](Sound/Sheaf.lean), [`Sound/Hohfeld.lean`](Sound/Hohfeld.lean), [`Sound/Linguistics.lean`](Sound/Linguistics.lean), [`Sound/Contract.lean`](Sound/Contract.lean), [`Sound/Theory.lean`](Sound/Theory.lean): Pure Lean 4 formal foundations (`65 + 18 + 22 + 21 + 16 = 142` top-level theorems, `0 sorryAx`, `0 Lean.ofReduceBool`), importing only Lean stdlib (`Std.Tactic.BVDecide`).
 - [`Sound.lean`](Sound.lean): Pure `Flow.Schema` `256`-slot (`16,384B`) arena ABI compiler & golden fixture emitter (`0` local theorems/lemmas/axioms, `0 memcpy` in generated `build/sound_schema_abi.h`, emitting `10` canonical `.snd` arenas + `"FIR1"` circuits + `golden_manifest.json`).
 - [`include/sound.h`](include/sound.h) & [`src/sound_ring0.c`](src/sound_ring0.c): Freestanding Ring-0 Pure-GPR C17 kernel (`0` undef symbols, `0` `udiv`/`sdiv`/FPU/SIMD/indirect calls, `C++20` header clean, `clang-tidy` 0 warnings).
-- [`src/sound_cert.h`](src/sound_cert.h) & [`src/sound_cli.c`](src/sound_cli.c): Zero-heap, zero-`leanshared` host CLI & certificate emitter (`T1..T18` built-in self-tests, `"FIR1"` synthesis/eval, and live `.lean` / `.json` certificate emission).
-- [`oracles/verify_sound_oracle.py`](oracles/verify_sound_oracle.py): Independent pure-Python exact oracle checking 10/10 Golden `SoundArena` (`16,384B`) + `"FIR1"` (`2,144B`) parity + SEARU repair, all 4 `classify-*` universes, and 6/6 live `lean -DwarningAsError=true` + `leanchecker` + `0 sorryAx` certificate replays.
-- [`tools/sound_sabotage_check.py`](tools/sound_sabotage_check.py): Parallel `42`-mutant single-fault C17 verification suite across `14` categories (`42/42 = 100.0%` killed, `0` compile errors).
-- [`experiments/`](experiments): 4 pure-theory stdlib-Python scripts (`bilattice_phase_atlas.py`, `sheaf_h1_atlas.py`, `hohfeld_norm_orbits.py`, `linguistics_projection_atlas.py`) cross-checked against `./build/sound`.
+- [`src/sound_cert.h`](src/sound_cert.h) & [`src/sound_cli.c`](src/sound_cli.c): Zero-heap, zero-`leanshared` host CLI & certificate emitter (`T1..T19` built-in self-tests, zero-heap JSON `audit-contract`, `"FIR1"` synthesis/eval, and live `.lean` / `.json` certificate emission).
+- [`oracles/verify_sound_oracle.py`](oracles/verify_sound_oracle.py): Independent pure-Python exact oracle checking 10/10 Golden `SoundArena` (`16,384B`) + `"FIR1"` (`2,144B`) parity + SEARU repair, all 4 `classify-*` universes, and 7/7 live `lean -DwarningAsError=true` + `leanchecker` + `0 sorryAx` / `0 ofReduceBool` certificate replays.
+- [`tools/sound_sabotage_check.py`](tools/sound_sabotage_check.py): Parallel `48`-mutant single-fault C17 verification suite across `16` categories (`48/48 = 100.0%` killed, `0` compile errors).
+- [`experiments/`](experiments): 5 pure-theory & contract-consent stdlib-Python scripts (`bilattice_phase_atlas.py`, `sheaf_h1_atlas.py`, `hohfeld_norm_orbits.py`, `linguistics_projection_atlas.py`, `contract_informed_consent_audit.py`) cross-checked against `./build/sound`.
 
 ## Build & Verify
 
@@ -56,6 +60,8 @@ Run standalone classifiers, hunts, and arena verification:
 ./build/sound hunt norm-trap       --seed 0x77   --out-lean build/certs/SoundHuntNormTrap.lean --out-fir build/certs/norm_trap.fir --out-json build/certs/norm_trap.json
 ./build/sound hunt aspect-firewall --seed 0x42   --out-lean build/certs/SoundHuntAspect.lean   --out-fir build/certs/aspect.fir  --out-json build/certs/aspect.json
 ./build/sound hunt presup-filter   --seed 0x55   --out-lean build/certs/SoundHuntPresup.lean   --out-fir build/certs/presup.fir  --out-json build/certs/presup.json
+./build/sound hunt contract-drift  --seed 0x534F554E445F3330 --out-lean build/certs/SoundHuntContract.lean --out-fir build/certs/contract.fir --out-json build/certs/contract.json
+./build/sound audit-contract benchmarks/contracts/elder_investment_policy_predatory.json --out-lean build/certs/CertElderPred.lean --out-fir build/certs/elder_pred.fir --out-json build/certs/elder_pred.json
 
 ./build/sound verify build/golden/case1_corroborated.snd --json
 ./build/sound repair build/golden/nixon_diamond.snd

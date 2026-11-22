@@ -1,0 +1,67 @@
+{
+  "contract_name": "Senior_Care_Facility_Predatory_2026",
+  "seed": "0x434152455F303031",
+  "max_loss_cap": 36000,
+  "max_exit_fee": 2500,
+  "protected_mask": 15,
+  "max_asym_num": 2,
+  "max_asym_den": 1,
+  "clauses": [
+    {
+      "clause_id": 1,
+      "title": "Disclosed annual residential care fee",
+      "kind": "base_fee",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 30000,
+      "extra_drift": 0,
+      "exit_fee": 1000,
+      "cons_penalty": 1000,
+      "inst_penalty": 1000,
+      "sheaf_cycle": false
+    },
+    {
+      "clause_id": 2,
+      "title": "Circular cross-referenced fee addendum (Sheaf H^1 != 0 cycle)",
+      "kind": "base_fee",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 2000,
+      "extra_drift": 5000,
+      "exit_fee": 0,
+      "cons_penalty": 0,
+      "inst_penalty": 0,
+      "sheaf_cycle": true
+    },
+    {
+      "clause_id": 3,
+      "title": "Contradictory (B4 TOP) supplemental nursing surcharge clause",
+      "kind": "ambiguous_obligation",
+      "disclosed": true,
+      "b4_truth": "TOP",
+      "target_mask": 0,
+      "base_loss": 0,
+      "extra_drift": 18000,
+      "exit_fee": 0,
+      "cons_penalty": 0,
+      "inst_penalty": 0,
+      "sheaf_cycle": false
+    },
+    {
+      "clause_id": 4,
+      "title": "Undisclosed move-out refurbishment & unconscionable deposit forfeiture",
+      "kind": "presup_smuggle",
+      "disclosed": false,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 6000,
+      "extra_drift": 0,
+      "exit_fee": 10000,
+      "cons_penalty": 20000,
+      "inst_penalty": 0,
+      "sheaf_cycle": false
+    }
+  ]
+}

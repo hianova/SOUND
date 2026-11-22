@@ -585,6 +585,76 @@ void sound_classify_projection(sound_projection_atlas_t *out);
 void sound_hunt_aspect_firewall(uint64_t seed, sound_aspect_witness_t *out);
 void sound_hunt_presup_filter(uint64_t seed, sound_presup_witness_t *out);
 
+/* ---- Pillar 5: Asymmetric Contract Informed-Consent & Benefit-Drift Verifier ---- */
+
+#define SOUND_CONTRACT_MAX_CLAUSES 32U
+
+typedef enum {
+    SOUND_CLAUSE_BASE_FEE = 0U,
+    SOUND_CLAUSE_UNILATERAL_POWER = 1U,
+    SOUND_CLAUSE_AMBIGUOUS_OBLIGATION = 2U,
+    SOUND_CLAUSE_PRESUP_SMUGGLE = 3U,
+    SOUND_CLAUSE_CHISHOLM_DEFAULT = 4U,
+    SOUND_CLAUSE_RECIPROCITY = 5U
+} sound_clause_kind_t;
+
+typedef enum {
+    SOUND_CVIOL_NONE = 0U,
+    SOUND_CVIOL_IMMUNITY_BREACH = (1U << 0U),
+    SOUND_CVIOL_BENEFIT_DRIFT = (1U << 1U),
+    SOUND_CVIOL_UNINFORMED_AMBIG = (1U << 2U),
+    SOUND_CVIOL_PRESUP_SMUGGLE = (1U << 3U),
+    SOUND_CVIOL_CHISHOLM_CASCADE = (1U << 4U),
+    SOUND_CVIOL_UNCONSCIONABLE = (1U << 5U),
+    SOUND_CVIOL_SHEAF_CONFLICT = (1U << 6U),
+    SOUND_CVIOL_EXIT_TRAP = (1U << 7U)
+} sound_contract_viol_t;
+
+typedef struct {
+    uint32_t clause_id;
+    uint8_t kind;
+    uint8_t disclosed;
+    uint8_t b4_truth;
+    uint8_t sheaf_cycle;
+    uint64_t target_mask;
+    uint64_t base_loss;
+    uint64_t extra_drift;
+    uint64_t exit_fee;
+    uint64_t cons_penalty;
+    uint64_t inst_penalty;
+} sound_contract_clause_t;
+
+typedef struct {
+    uint64_t seed;
+    uint64_t max_loss_cap;
+    uint64_t max_exit_fee;
+    uint64_t protected_mask;
+    uint64_t max_asym_num;
+    uint64_t max_asym_den;
+    uint32_t num_clauses;
+    uint32_t reserved;
+    sound_contract_clause_t clauses[SOUND_CONTRACT_MAX_CLAUSES];
+} sound_contract_spec_t;
+
+typedef struct {
+    uint32_t certified;
+    uint32_t viol_flags;
+    uint32_t num_predatory_clauses;
+    uint32_t repaired_certified;
+    uint64_t base_loss_sum;
+    uint64_t worst_case_loss;
+    int64_t benefit_drift;
+    uint64_t max_exit_seen;
+    uint64_t repaired_worst_loss;
+    uint32_t predatory_clause_ids[SOUND_CONTRACT_MAX_CLAUSES];
+    uint32_t clause_viol_masks[SOUND_CONTRACT_MAX_CLAUSES];
+    uint64_t merkle;
+} sound_contract_audit_t;
+
+void sound_audit_contract(const sound_contract_spec_t *spec, sound_contract_audit_t *out);
+void sound_hunt_contract_drift(uint64_t seed, sound_contract_spec_t *spec_out,
+                               sound_contract_audit_t *audit_out);
+
 #ifdef __cplusplus
 }
 #endif

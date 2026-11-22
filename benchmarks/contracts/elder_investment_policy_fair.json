@@ -1,0 +1,53 @@
+{
+  "contract_name": "Elder_Structured_Policy_Fair_2026",
+  "seed": "0x454C4445525F3032",
+  "max_loss_cap": 25000,
+  "max_exit_fee": 2000,
+  "protected_mask": 15,
+  "max_asym_num": 2,
+  "max_asym_den": 1,
+  "clauses": [
+    {
+      "clause_id": 1,
+      "title": "Disclosed annual advisory & custody fee",
+      "kind": "base_fee",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 12000,
+      "extra_drift": 0,
+      "exit_fee": 1000,
+      "cons_penalty": 500,
+      "inst_penalty": 500,
+      "sheaf_cycle": false
+    },
+    {
+      "clause_id": 2,
+      "title": "Disclosed fixed mortality & admin charge",
+      "kind": "reciprocity",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 8000,
+      "extra_drift": 0,
+      "exit_fee": 1500,
+      "cons_penalty": 600,
+      "inst_penalty": 300,
+      "sheaf_cycle": false
+    },
+    {
+      "clause_id": 3,
+      "title": "Principal-guaranteed fixed redemption cap",
+      "kind": "reciprocity",
+      "disclosed": true,
+      "b4_truth": "TRUE",
+      "target_mask": 0,
+      "base_loss": 3000,
+      "extra_drift": 0,
+      "exit_fee": 1800,
+      "cons_penalty": 1000,
+      "inst_penalty": 1000,
+      "sheaf_cycle": false
+    }
+  ]
+}
