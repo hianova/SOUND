@@ -1,143 +1,40 @@
 #ifndef SOUND_CERT_H
 #define SOUND_CERT_H
 
-#include "flow_ir.h"
-#include "flow_ir_wire.h"
+#include "flow_ir_builder.h"
+#include "flow_ir_io.h"
 #include "sound.h"
 
 #include <stdio.h>
-#include <string.h>
 
-typedef struct {
-    flow_ir_prog_t ir_prog;
-    flow_ir_prog_t ir_reloaded;
-    uint8_t wire_buf[FLOW_IR_MAX_FILE_BYTES];
-    size_t wire_len;
-    uint32_t mult_bits;
-    uint32_t mult_depth;
-    bool ir_linear_ok;
-    bool ir_unitary_ok;
-    bool ir_eval_ok;
-} sound_cert_ws_t;
+typedef flow_ir_builder_ws_t sound_cert_ws_t;
 
 static inline uint32_t sound_cert_emit_const(flow_ir_prog_t *p, uint16_t width, uint64_t val,
                                              const char *name) {
-    if (p->num_vals >= FLOW_IR_MAX_VALS || p->num_ops >= FLOW_IR_MAX_OPS) {
-        return UINT32_MAX;
-    }
-    uint32_t vid = p->num_vals;
-    uint32_t opid = p->num_ops;
-    p->vals[vid].width = width;
-    p->vals[vid].is_classical = 0U;
-    snprintf(p->vals[vid].name, sizeof(p->vals[vid].name), "%s", name);
-    p->ops[opid].kind = FLOW_IR_OP_CONST_U64;
-    p->ops[opid].num_ins = 0U;
-    p->ops[opid].out_val = vid;
-    p->ops[opid].p0 = val;
-    p->num_vals++;
-    p->num_ops++;
-    return vid;
+    return flow_ir_emit_const(p, width, val, name);
 }
 
 static inline uint32_t sound_cert_emit_op1(flow_ir_prog_t *p, uint16_t kind, uint16_t width,
                                            uint32_t in0, uint64_t p0, const char *name) {
-    if (p->num_vals >= FLOW_IR_MAX_VALS || p->num_ops >= FLOW_IR_MAX_OPS || in0 == UINT32_MAX) {
-        return UINT32_MAX;
-    }
-    uint32_t vid = p->num_vals;
-    uint32_t opid = p->num_ops;
-    p->vals[vid].width = width;
-    p->vals[vid].is_classical = 0U;
-    snprintf(p->vals[vid].name, sizeof(p->vals[vid].name), "%s", name);
-    p->ops[opid].kind = kind;
-    p->ops[opid].num_ins = 1U;
-    p->ops[opid].out_val = vid;
-    p->ops[opid].ins[0] = in0;
-    p->ops[opid].p0 = p0;
-    p->num_vals++;
-    p->num_ops++;
-    return vid;
+    return flow_ir_emit_op1(p, kind, width, in0, p0, name);
 }
 
 static inline uint32_t sound_cert_emit_op2(flow_ir_prog_t *p, uint16_t kind, uint16_t width,
                                            uint32_t lhs, uint32_t rhs, const char *name) {
-    if (p->num_vals >= FLOW_IR_MAX_VALS || p->num_ops >= FLOW_IR_MAX_OPS || lhs == UINT32_MAX ||
-        rhs == UINT32_MAX) {
-        return UINT32_MAX;
-    }
-    uint32_t vid = p->num_vals;
-    uint32_t opid = p->num_ops;
-    p->vals[vid].width = width;
-    p->vals[vid].is_classical = 0U;
-    snprintf(p->vals[vid].name, sizeof(p->vals[vid].name), "%s", name);
-    p->ops[opid].kind = kind;
-    p->ops[opid].num_ins = 2U;
-    p->ops[opid].out_val = vid;
-    p->ops[opid].ins[0] = lhs;
-    p->ops[opid].ins[1] = rhs;
-    p->num_vals++;
-    p->num_ops++;
-    return vid;
+    return flow_ir_emit_op2(p, kind, width, lhs, rhs, name);
 }
 
 static inline uint32_t sound_cert_emit_sel(flow_ir_prog_t *p, uint16_t width, uint32_t sel,
                                            uint32_t vf, uint32_t vt, const char *name) {
-    if (p->num_vals >= FLOW_IR_MAX_VALS || p->num_ops >= FLOW_IR_MAX_OPS || sel == UINT32_MAX ||
-        vf == UINT32_MAX || vt == UINT32_MAX) {
-        return UINT32_MAX;
-    }
-    uint32_t vid = p->num_vals;
-    uint32_t opid = p->num_ops;
-    p->vals[vid].width = width;
-    p->vals[vid].is_classical = 0U;
-    snprintf(p->vals[vid].name, sizeof(p->vals[vid].name), "%s", name);
-    p->ops[opid].kind = FLOW_IR_OP_CTRL_SEL;
-    p->ops[opid].num_ins = 3U;
-    p->ops[opid].out_val = vid;
-    p->ops[opid].ins[0] = sel;
-    p->ops[opid].ins[1] = vf;
-    p->ops[opid].ins[2] = vt;
-    p->num_vals++;
-    p->num_ops++;
-    return vid;
+    return flow_ir_emit_sel(p, width, sel, vf, vt, name);
 }
 
 static inline bool sound_cert_seal_and_write_fir(sound_cert_ws_t *ws, const char *out_fir_path) {
-    flow_ir_dag_stats_t dag;
-    if (!flow_ir_encode_bytes(&ws->ir_prog, ws->wire_buf, sizeof(ws->wire_buf), &ws->wire_len)) {
-        return false;
-    }
-    if (flow_ir_load_bytes_fiber(&ws->ir_reloaded, ws->wire_buf, ws->wire_len) !=
-        FLOW_IR_FIBER_COMMITTED) {
-        return false;
-    }
-    ws->ir_linear_ok = (ws->ir_reloaded.mult == FLOW_IR_MULT_LINEAR);
-    ws->ir_unitary_ok = flow_ir_admits_unitary(&ws->ir_reloaded);
-    if (!ws->ir_linear_ok || !ws->ir_unitary_ok || !flow_ir_analyze_dag(&ws->ir_reloaded, &dag)) {
-        return false;
-    }
-    ws->mult_bits = dag.mult_bits;
-    ws->mult_depth = dag.mult_depth;
-    if (out_fir_path != NULL && out_fir_path[0] != '\0') {
-        FILE *fp = fopen(out_fir_path, "wb");
-        if (fp == NULL) {
-            return false;
-        }
-        size_t wr = fwrite(ws->wire_buf, 1U, ws->wire_len, fp);
-        int cls = fclose(fp);
-        if (wr != ws->wire_len || cls != 0) {
-            return false;
-        }
-    }
-    return true;
+    return flow_ir_builder_seal_and_write(ws, out_fir_path);
 }
 
 static inline void sound_cert_init_prog(sound_cert_ws_t *ws, const char *name) {
-    sound_zero_bytes(ws, sizeof(*ws));
-    flow_ir_prog_t *p = &ws->ir_prog;
-    snprintf(p->name, sizeof(p->name), "%s", name);
-    p->mult = FLOW_IR_MULT_LINEAR;
-    p->flags = FLOW_IR_FLAG_CLEAN;
+    flow_ir_builder_init(ws, name);
 }
 
 /* ============================================================================

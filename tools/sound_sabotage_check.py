@@ -22,23 +22,22 @@ categories (3 mutants each) in `src/sound_ring0.c`:
 
 from __future__ import annotations
 
-import concurrent.futures
 import os
-import shutil
-import subprocess
 import sys
-import tempfile
-import time
-from dataclasses import dataclass
 from pathlib import Path
 
 
-@dataclass(frozen=True)
-class SoundMutant:
-    name: str
-    category: str
-    target: str
-    replacement: str
+FLOW_TOOLS_DIR = (
+    Path(os.environ.get("FLOW_DIR", str(Path(__file__).resolve().parents[2] / "FLOW"))).resolve()
+    / "sdk"
+    / "tools"
+)
+if str(FLOW_TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(FLOW_TOOLS_DIR))
+
+from flow_sabotage_runner import FlowMutant, run_sabotage_suite
+
+SoundMutant = FlowMutant
 
 
 def build_sound_mutants() -> list[SoundMutant]:
@@ -541,179 +540,16 @@ def build_sound_mutants() -> list[SoundMutant]:
     ]
 
 
-def _run_one_mutant(
-    mutant: SoundMutant,
-    ring0_src: str,
-    cli_path: Path,
-    repo_root: Path,
-    flow_core: Path,
-    flow_sdk: Path,
-    cc: str,
-) -> tuple[SoundMutant, int, int, int, str]:
-    count = ring0_src.count(mutant.target)
-    if count != 1:
-        return (mutant, count, -1, -1, f"target match count={count} (expected 1)")
-
-    mutated_c = ring0_src.replace(mutant.target, mutant.replacement, 1)
-    with tempfile.TemporaryDirectory(prefix=f"snd_mut_{mutant.name}_") as td:
-        tmp_dir = Path(td)
-        ring0_mut = tmp_dir / "sound_ring0.c"
-        ring0_mut.write_text(mutated_c, encoding="utf-8")
-        ring0_obj = tmp_dir / "sound_ring0.o"
-        exe_path = tmp_dir / "sound"
-
-        ring0_flags = [
-            cc,
-            "-std=c17",
-            "-O2",
-            "-ffreestanding",
-            "-nostdlib",
-            "-fno-builtin",
-            "-fno-stack-protector",
-            "-fno-jump-tables",
-            "-mgeneral-regs-only",
-            "-Wall",
-            "-Wextra",
-            "-Wpedantic",
-            "-Wconversion",
-            "-Wundef",
-            "-Wmissing-prototypes",
-            "-Werror",
-            "-I",
-            str(repo_root / "include"),
-            "-I",
-            str(repo_root / "build"),
-            "-isystem",
-            str(flow_core),
-            "-isystem",
-            str(flow_sdk),
-            "-c",
-            str(ring0_mut),
-            "-o",
-            str(ring0_obj),
-        ]
-        c1 = subprocess.run(ring0_flags, capture_output=True, text=True, check=False)
-        if c1.returncode != 0:
-            return (mutant, count, c1.returncode, -1, f"ring0 compile failed:\n{c1.stderr.strip()}")
-
-        cli_flags = [
-            cc,
-            "-std=c17",
-            "-O2",
-            "-Wall",
-            "-Wextra",
-            "-Wpedantic",
-            "-Wconversion",
-            "-Wundef",
-            "-Wmissing-prototypes",
-            "-Werror",
-            "-I",
-            str(repo_root / "include"),
-            "-I",
-            str(repo_root / "build"),
-            "-isystem",
-            str(flow_core),
-            "-isystem",
-            str(flow_sdk),
-            str(cli_path),
-            str(ring0_obj),
-            "-o",
-            str(exe_path),
-        ]
-        c2 = subprocess.run(cli_flags, capture_output=True, text=True, check=False)
-        if c2.returncode != 0:
-            return (mutant, count, c2.returncode, -1, f"cli link failed:\n{c2.stderr.strip()}")
-
-        run = subprocess.run([str(exe_path), "selftest"], capture_output=True, text=True, check=False)
-        detail = (run.stdout or run.stderr).strip()
-        return (mutant, count, 0, run.returncode, detail)
-
-
 def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
-    ring0_path = repo_root / "src" / "sound_ring0.c"
-    cli_path = repo_root / "src" / "sound_cli.c"
-    schema_hdr = repo_root / "build" / "sound_schema_abi.h"
-    flow_dir = Path(os.environ.get("FLOW_DIR", str(repo_root.parent / "FLOW"))).resolve()
-    flow_core = flow_dir / "core"
-    flow_sdk = flow_dir / "sdk"
-    cc = os.environ.get("CC", "clang")
-    if not Path(cc).exists() and Path("/opt/homebrew/opt/llvm/bin/clang").exists():
-        cc = "/opt/homebrew/opt/llvm/bin/clang"
-
-    if not schema_hdr.is_file():
-        print(f"ERROR: missing {schema_hdr}; run `make all` first.", file=sys.stderr)
-        return 1
-
-    ring0_src = ring0_path.read_text(encoding="utf-8")
-    mutants = build_sound_mutants()
-
-    # Baseline sanity check
-    t0 = time.monotonic()
-    with tempfile.TemporaryDirectory(prefix="snd_mut_base_") as td:
-        tmp_dir = Path(td)
-        base_obj = tmp_dir / "sound_ring0.o"
-        base_exe = tmp_dir / "sound"
-        b1 = subprocess.run(
-            [
-                cc, "-std=c17", "-O2", "-ffreestanding", "-nostdlib", "-fno-builtin",
-                "-fno-stack-protector", "-fno-jump-tables", "-mgeneral-regs-only",
-                "-Wall", "-Wextra", "-Wpedantic", "-Wconversion", "-Wundef", "-Wmissing-prototypes", "-Werror",
-                "-I", str(repo_root / "include"), "-I", str(repo_root / "build"),
-                "-isystem", str(flow_core), "-isystem", str(flow_sdk),
-                "-c", str(ring0_path), "-o", str(base_obj),
-            ],
-            capture_output=True, text=True, check=False,
-        )
-        assert b1.returncode == 0, f"Baseline ring0 compile failed:\n{b1.stderr}"
-        b2 = subprocess.run(
-            [
-                cc, "-std=c17", "-O2", "-Wall", "-Wextra", "-Wpedantic", "-Wconversion",
-                "-Wundef", "-Wmissing-prototypes", "-Werror",
-                "-I", str(repo_root / "include"), "-I", str(repo_root / "build"),
-                "-isystem", str(flow_core), "-isystem", str(flow_sdk),
-                str(cli_path), str(base_obj), "-o", str(base_exe),
-            ],
-            capture_output=True, text=True, check=False,
-        )
-        assert b2.returncode == 0, f"Baseline CLI build failed:\n{b2.stderr}"
-        br = subprocess.run([str(base_exe), "selftest"], capture_output=True, text=True, check=False)
-        assert br.returncode == 0, f"Baseline selftest failed:\n{br.stdout}\n{br.stderr}"
-
-    workers = min(8, max(1, (os.cpu_count() or 4)))
-    results: list[tuple[SoundMutant, int, int, int, str]] = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
-        futs = [
-            ex.submit(_run_one_mutant, m, ring0_src, cli_path, repo_root, flow_core, flow_sdk, cc)
-            for m in mutants
-        ]
-        for f in futs:
-            results.append(f.result())
-
-    killed = 0
-    bad = 0
-    cat_counts: dict[str, list[int]] = {}
-    for m, count, comp_rc, run_rc, detail in results:
-        cat_counts.setdefault(m.category, [0, 0])
-        cat_counts[m.category][1] += 1
-        if count == 1 and comp_rc == 0 and run_rc != 0:
-            killed += 1
-            cat_counts[m.category][0] += 1
-            print(f"  [KILLED] {m.category:28s} | {m.name:40s} (rc={run_rc})")
-        else:
-            bad += 1
-            print(
-                f"  [SURVIVED/ERR] {m.category:28s} | {m.name:40s} "
-                f"(count={count} cc={comp_rc} rc={run_rc})\n    {detail}"
-            )
-
-    dt = time.monotonic() - t0
-    pct = (100.0 * killed / len(mutants)) if mutants else 0.0
-    print("  --- Category Summary ---")
-    for cat, (k, tot) in cat_counts.items():
-        print(f"    {cat:28s}: {k}/{tot}")
-    print(f"  [SABOTAGE-GATE] killed={killed}/{len(mutants)} ({pct:.1f}%) in {dt:.2f}s")
-    return 0 if (bad == 0 and killed == len(mutants)) else 1
+    return run_sabotage_suite(
+        ring0_path=repo_root / "src" / "sound_ring0.c",
+        cli_path=repo_root / "src" / "sound_cli.c",
+        schema_hdr=repo_root / "build" / "sound_schema_abi.h",
+        mutants=build_sound_mutants(),
+        repo_root=repo_root,
+        prefix="snd_mut_",
+    )
 
 
 if __name__ == "__main__":
