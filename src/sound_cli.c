@@ -1638,19 +1638,22 @@ static bool sound_save_bin_file(const char *path, const uint8_t *buf, size_t len
 }
 
 static void sound_derive_prog_name(char dst[24], const char *path) {
+    if (path == NULL) {
+        static const char k_fallback[] = "sound_auth_gate";
+        for (size_t i = 0U; i < sizeof(k_fallback); i++) {
+            dst[i] = k_fallback[i];
+        }
+        return;
+    }
     const char *base = path;
-    if (path != NULL) {
-        for (size_t i = 0U; path[i] != '\0'; i++) {
-            if (path[i] == '/' || path[i] == '\\') {
-                base = &path[i + 1U];
-            }
+    for (size_t i = 0U; path[i] != '\0'; i++) {
+        if (path[i] == '/' || path[i] == '\\') {
+            base = &path[i + 1U];
         }
     }
     size_t len = 0U;
-    if (base != NULL) {
-        while (base[len] != '\0') {
-            len++;
-        }
+    while (base[len] != '\0') {
+        len++;
     }
     if (len > 4U && base[len - 4U] == '.' && base[len - 3U] == 's' && base[len - 2U] == 'n' &&
         base[len - 1U] == 'd') {
