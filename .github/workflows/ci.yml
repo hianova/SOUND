@@ -63,6 +63,6 @@ jobs:
           if [ "$(uname -s)" = "Darwin" ]; then
             export PATH="$(brew --prefix llvm)/bin:$PATH"
           fi
-          make -C FLOW all CC=clang CXX=clang++
+          make -C FLOW all lean CC=clang CXX=clang++
           make -C SOUND clean
           make -C SOUND verify-all experiments CC=clang CXX=clang++
