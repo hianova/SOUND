@@ -1,0 +1,26 @@
+# FLOW v10.0.0 ArenaSchema: 64-byte SOUND Normative & Epistemic Wire Cells
+arena 4 sound_wire build/sound_wire.h sound_wire_cell_t sound_wire_map_t sound_wire_arena_t
+
+layout norm sound_norm_wire_t
+  field revoked_mask 0 u64 1
+  field penumbra_mask 64 u64 1
+  field duty_pos_mask 128 u64 1
+  field duty_neg_mask 192 u64 1
+  field power_mask 256 u64 1
+  field immunity_mask 320 u64 1
+  field voidable_mask 384 u64 1
+  field rescission_power_mask 448 u64 1
+
+layout eval_out sound_eval_wire_t
+  field node_mask 0 u64 1
+  field i_star 64 u64 1
+  field p_star 128 u64 1
+  field established_mask 192 u64 1
+  field defeated_mask 256 u64 1
+  field conflict_mask 320 u64 1
+  field penumbra_mask 384 u64 1
+  field eval_flags 448 u32 1
+  field eval_epoch 480 u32 1
+
+region norm 0 2 norm SOUND_SLOT_NORM -
+region eval_out 2 2 eval_out SOUND_SLOT_EVAL_OUT -
