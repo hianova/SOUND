@@ -1,6 +1,7 @@
 SHELL := /bin/sh
 UNAME_S := $(shell uname -s)
 FLOW_DIR ?= ../FLOW
+FLOW_CLI := $(FLOW_DIR)/build/flow
 BUILD := build
 LEAN ?= $(or $(shell command -v lean 2>/dev/null),$(HOME)/.elan/bin/lean)
 LEANCHECKER ?= $(or $(shell command -v leanchecker 2>/dev/null),$(HOME)/.elan/bin/leanchecker)
@@ -84,9 +85,20 @@ $(BUILD)/sound_schema_abi.h: $(BUILD)/lean/Sound.olean
 	@mkdir -p $(BUILD)
 	LEAN_PATH=$(BUILD)/lean:$(FLOW_DIR)/build/lean $(LEAN) --run Sound.lean emit-schema $@
 
-$(BUILD)/golden/golden_manifest.json: $(BUILD)/lean/Sound.olean
+$(FLOW_CLI):
+	$(MAKE) -C $(FLOW_DIR) all LEAN=false
+
+$(BUILD)/golden/golden_manifest.json: $(BUILD)/lean/Sound.olean | $(FLOW_CLI)
 	@mkdir -p $(BUILD)/golden
 	LEAN_PATH=$(BUILD)/lean:$(FLOW_DIR)/build/lean $(LEAN) --run Sound.lean emit-golden $(BUILD)/golden
+	@for f in $(BUILD)/golden/*.snd; do \
+		$(FLOW_CLI) arena pack "$$f" "$${f%.snd}.flwa" >/dev/null || exit 1; \
+		rm -f "$$f"; \
+	done
+	@for f in $(BUILD)/golden/*.fir; do \
+		$(FLOW_CLI) fir pack "$$f" "$${f%.fir}.fir2" >/dev/null || exit 1; \
+		rm -f "$$f"; \
+	done
 
 $(BUILD)/sound_ring0.o: src/sound_ring0.c include/sound.h $(BUILD)/sound_schema_abi.h
 	@mkdir -p $(BUILD)
