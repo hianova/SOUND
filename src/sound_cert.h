@@ -3,11 +3,33 @@
 
 #include "flow_ir_builder.h"
 #include "flow_ir_io.h"
+#include "flow_wire_pack.h"
 #include "sound.h"
 
 #include <stdio.h>
 
 typedef flow_ir_builder_ws_t sound_cert_ws_t;
+
+#define SOUND_CERT_PACK_MAGIC   UINT32_C(0x43444E53) /* "SNDC" */
+#define SOUND_CERT_PACK_VERSION UINT8_C(1)
+#define SOUND_CERT_MAX_BYTES    16384U
+
+typedef enum {
+    SOUND_WIRE_KIND_CONTRACT_SPEC = 1U,
+    SOUND_WIRE_KIND_CONTRACT_CERT = 2U,
+    SOUND_WIRE_KIND_HUNT_WITNESS = 3U
+} sound_wire_kind_t;
+
+typedef enum {
+    SOUND_HUNT_MODE_PARADOX_MIN = 1U,
+    SOUND_HUNT_MODE_SHEAF_H1 = 2U,
+    SOUND_HUNT_MODE_CHISHOLM = 3U,
+    SOUND_HUNT_MODE_NORM_TRAP = 4U,
+    SOUND_HUNT_MODE_ASPECT_FIREWALL = 5U,
+    SOUND_HUNT_MODE_PRESUP_FILTER = 6U,
+    SOUND_HUNT_MODE_CONTRACT_DRIFT = 7U,
+    SOUND_HUNT_MODE_CONTRACT_LOOPHOLE = 8U
+} sound_hunt_mode_t;
 
 static inline uint32_t sound_cert_emit_const(flow_ir_prog_t *p, uint16_t width, uint64_t val,
                                              const char *name) {
@@ -29,8 +51,48 @@ static inline uint32_t sound_cert_emit_sel(flow_ir_prog_t *p, uint16_t width, ui
     return flow_ir_emit_sel(p, width, sel, vf, vt, name);
 }
 
+static inline bool sound_cert_bytes_equal(const uint8_t *a, const uint8_t *b, size_t n) {
+    if (a == NULL || b == NULL) {
+        return false;
+    }
+    for (size_t i = 0U; i < n; i++) {
+        if (a[i] != b[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static inline bool sound_cert_seal_and_write_fir(sound_cert_ws_t *ws, const char *out_fir_path) {
-    return flow_ir_builder_seal_and_write(ws, out_fir_path);
+    if (ws == NULL) {
+        return false;
+    }
+    static uint8_t rt_buf[FLOW_IR_MAX_FILE_BYTES];
+    size_t rt_len = 0U;
+    flow_ir_dag_stats_t dag;
+    if (!flow_ir_encode_packed_bytes(&ws->ir_prog, ws->wire_buf, sizeof(ws->wire_buf),
+                                     &ws->wire_len)) {
+        return false;
+    }
+    if (flow_ir_load_bytes_fiber(&ws->ir_reloaded, ws->wire_buf, ws->wire_len) !=
+        FLOW_IR_FIBER_COMMITTED) {
+        return false;
+    }
+    if (!flow_ir_encode_packed_bytes(&ws->ir_reloaded, rt_buf, sizeof(rt_buf), &rt_len) ||
+        rt_len != ws->wire_len || !sound_cert_bytes_equal(ws->wire_buf, rt_buf, ws->wire_len)) {
+        return false;
+    }
+    ws->ir_linear_ok = (ws->ir_reloaded.mult == FLOW_IR_MULT_LINEAR);
+    ws->ir_unitary_ok = flow_ir_admits_unitary(&ws->ir_reloaded);
+    if (!ws->ir_linear_ok || !ws->ir_unitary_ok || !flow_ir_analyze_dag(&ws->ir_reloaded, &dag)) {
+        return false;
+    }
+    ws->mult_bits = dag.mult_bits;
+    ws->mult_depth = dag.mult_depth;
+    if (out_fir_path != NULL && out_fir_path[0] != '\0') {
+        return flow_ir_write_bytes_file(out_fir_path, ws->wire_buf, ws->wire_len);
+    }
+    return true;
 }
 
 static inline void sound_cert_init_prog(sound_cert_ws_t *ws, const char *name) {
@@ -171,13 +233,10 @@ static inline bool sound_cert_emit_paradox_fir(const sound_paradox_witness_t *w,
     return match;
 }
 
-static inline bool sound_cert_emit_paradox_json(const sound_paradox_witness_t *w,
-                                                const sound_cert_ws_t *ws, const char *path) {
-    if (w == NULL || path == NULL) {
-        return false;
-    }
-    FILE *fp = fopen(path, "wb");
-    if (fp == NULL) {
+static inline bool sound_cert_write_paradox_json_fp(const sound_paradox_witness_t *w,
+                                                    size_t fir_wire_bytes, bool fir_eval_ok,
+                                                    FILE *fp) {
+    if (w == NULL || fp == NULL) {
         return false;
     }
     fprintf(fp, "{\n");
@@ -192,11 +251,25 @@ static inline bool sound_cert_emit_paradox_json(const sound_paradox_witness_t *w
     fprintf(fp, "  \"conflict_mask\": %u,\n", (unsigned)w->conflict_mask);
     fprintf(fp, "  \"is_odd_cycle\": %u,\n", (unsigned)w->is_odd_cycle);
     fprintf(fp, "  \"merkle\": \"0x%016llx\",\n", (unsigned long long)w->merkle);
-    fprintf(fp, "  \"fir_wire_bytes\": %zu,\n", (ws != NULL) ? ws->wire_len : 0U);
-    fprintf(fp, "  \"fir_eval_ok\": %s\n", (ws != NULL && ws->ir_eval_ok) ? "true" : "false");
+    fprintf(fp, "  \"fir_wire_bytes\": %zu,\n", fir_wire_bytes);
+    fprintf(fp, "  \"fir_eval_ok\": %s\n", fir_eval_ok ? "true" : "false");
     fprintf(fp, "}\n");
-    fclose(fp);
-    return true;
+    return ferror(fp) == 0;
+}
+
+static inline bool sound_cert_emit_paradox_json(const sound_paradox_witness_t *w,
+                                                const sound_cert_ws_t *ws, const char *path) {
+    if (w == NULL || path == NULL) {
+        return false;
+    }
+    FILE *fp = fopen(path, "wb");
+    if (fp == NULL) {
+        return false;
+    }
+    bool ok = sound_cert_write_paradox_json_fp(w, (ws != NULL) ? ws->wire_len : 0U,
+                                               (ws != NULL && ws->ir_eval_ok), fp);
+    int cls = fclose(fp);
+    return ok && (cls == 0);
 }
 
 /* ============================================================================
@@ -288,13 +361,10 @@ static inline bool sound_cert_emit_sheaf_fir(const sound_sheaf_witness_t *w,
     return ok;
 }
 
-static inline bool sound_cert_emit_sheaf_json(const sound_sheaf_witness_t *w,
-                                              const sound_cert_ws_t *ws, const char *path) {
-    if (w == NULL || path == NULL) {
-        return false;
-    }
-    FILE *fp = fopen(path, "wb");
-    if (fp == NULL) {
+static inline bool sound_cert_write_sheaf_json_fp(const sound_sheaf_witness_t *w,
+                                                  size_t fir_wire_bytes, bool fir_eval_ok,
+                                                  FILE *fp) {
+    if (w == NULL || fp == NULL) {
         return false;
     }
     fprintf(fp, "{\n");
@@ -314,11 +384,25 @@ static inline bool sound_cert_emit_sheaf_json(const sound_sheaf_witness_t *w,
     fprintf(fp, "  \"t20\": \"0x%016llx\",\n", (unsigned long long)w->t20);
     fprintf(fp, "  \"xor_holonomy\": \"0x%016llx\",\n", (unsigned long long)w->xor_holonomy);
     fprintf(fp, "  \"merkle\": \"0x%016llx\",\n", (unsigned long long)w->merkle);
-    fprintf(fp, "  \"fir_wire_bytes\": %zu,\n", (ws != NULL) ? ws->wire_len : 0U);
-    fprintf(fp, "  \"fir_eval_ok\": %s\n", (ws != NULL && ws->ir_eval_ok) ? "true" : "false");
+    fprintf(fp, "  \"fir_wire_bytes\": %zu,\n", fir_wire_bytes);
+    fprintf(fp, "  \"fir_eval_ok\": %s\n", fir_eval_ok ? "true" : "false");
     fprintf(fp, "}\n");
-    fclose(fp);
-    return true;
+    return ferror(fp) == 0;
+}
+
+static inline bool sound_cert_emit_sheaf_json(const sound_sheaf_witness_t *w,
+                                              const sound_cert_ws_t *ws, const char *path) {
+    if (w == NULL || path == NULL) {
+        return false;
+    }
+    FILE *fp = fopen(path, "wb");
+    if (fp == NULL) {
+        return false;
+    }
+    bool ok = sound_cert_write_sheaf_json_fp(w, (ws != NULL) ? ws->wire_len : 0U,
+                                             (ws != NULL && ws->ir_eval_ok), fp);
+    int cls = fclose(fp);
+    return ok && (cls == 0);
 }
 
 /* ============================================================================
@@ -397,8 +481,14 @@ static inline bool sound_cert_emit_chisholm_fir(const char *out_fir_path, sound_
                           &ws->wire_len) != SOUND_FIBER_COMMITTED) {
         return false;
     }
-    if (flow_ir_load_bytes_fiber(&ws->ir_reloaded, ws->wire_buf, ws->wire_len) !=
+    if (flow_ir_load_bytes_fiber(&ws->ir_prog, ws->wire_buf, ws->wire_len) !=
         FLOW_IR_FIBER_COMMITTED) {
+        return false;
+    }
+    if (!flow_ir_encode_packed_bytes(&ws->ir_prog, ws->wire_buf, sizeof(ws->wire_buf),
+                                     &ws->wire_len) ||
+        flow_ir_load_bytes_fiber(&ws->ir_reloaded, ws->wire_buf, ws->wire_len) !=
+            FLOW_IR_FIBER_COMMITTED) {
         return false;
     }
     flow_ir_dag_stats_t dag;
@@ -417,26 +507,15 @@ static inline bool sound_cert_emit_chisholm_fir(const char *out_fir_path, sound_
         return false;
     }
     if (out_fir_path != NULL && out_fir_path[0] != '\0') {
-        FILE *fp = fopen(out_fir_path, "wb");
-        if (fp == NULL) {
-            return false;
-        }
-        size_t wr = fwrite(ws->wire_buf, 1U, ws->wire_len, fp);
-        int cls = fclose(fp);
-        if (wr != ws->wire_len || cls != 0) {
-            return false;
-        }
+        return flow_ir_write_bytes_file(out_fir_path, ws->wire_buf, ws->wire_len);
     }
     return true;
 }
 
-static inline bool sound_cert_emit_chisholm_json(const sound_chisholm_witness_t *w,
-                                                 const sound_cert_ws_t *ws, const char *path) {
-    if (w == NULL || path == NULL) {
-        return false;
-    }
-    FILE *fp = fopen(path, "wb");
-    if (fp == NULL) {
+static inline bool sound_cert_write_chisholm_json_fp(const sound_chisholm_witness_t *w,
+                                                     size_t fir_wire_bytes, bool fir_eval_ok,
+                                                     FILE *fp) {
+    if (w == NULL || fp == NULL) {
         return false;
     }
     fprintf(fp, "{\n");
@@ -450,11 +529,25 @@ static inline bool sound_cert_emit_chisholm_json(const sound_chisholm_witness_t 
             (unsigned)w->statuses[1], (unsigned)w->statuses[2], (unsigned)w->statuses[3]);
     fprintf(fp, "  \"hohfeld_ok\": %u,\n", (unsigned)w->hohfeld_ok);
     fprintf(fp, "  \"merkle\": \"0x%016llx\",\n", (unsigned long long)w->merkle);
-    fprintf(fp, "  \"fir_wire_bytes\": %zu,\n", (ws != NULL) ? ws->wire_len : 0U);
-    fprintf(fp, "  \"fir_eval_ok\": %s\n", (ws != NULL && ws->ir_eval_ok) ? "true" : "false");
+    fprintf(fp, "  \"fir_wire_bytes\": %zu,\n", fir_wire_bytes);
+    fprintf(fp, "  \"fir_eval_ok\": %s\n", fir_eval_ok ? "true" : "false");
     fprintf(fp, "}\n");
-    fclose(fp);
-    return true;
+    return ferror(fp) == 0;
+}
+
+static inline bool sound_cert_emit_chisholm_json(const sound_chisholm_witness_t *w,
+                                                 const sound_cert_ws_t *ws, const char *path) {
+    if (w == NULL || path == NULL) {
+        return false;
+    }
+    FILE *fp = fopen(path, "wb");
+    if (fp == NULL) {
+        return false;
+    }
+    bool ok = sound_cert_write_chisholm_json_fp(w, (ws != NULL) ? ws->wire_len : 0U,
+                                                (ws != NULL && ws->ir_eval_ok), fp);
+    int cls = fclose(fp);
+    return ok && (cls == 0);
 }
 
 /* ============================================================================
@@ -554,6 +647,10 @@ static inline bool sound_cert_emit_norm_trap_fir(const sound_norm_trap_witness_t
     if (sound_eval(&arena) != SOUND_FIBER_COMMITTED ||
         sound_lift_to_fir(&arena, "norm_trap_gate", 0U, ws->wire_buf, sizeof(ws->wire_buf),
                           &ws->wire_len) != SOUND_FIBER_COMMITTED ||
+        flow_ir_load_bytes_fiber(&ws->ir_prog, ws->wire_buf, ws->wire_len) !=
+            FLOW_IR_FIBER_COMMITTED ||
+        !flow_ir_encode_packed_bytes(&ws->ir_prog, ws->wire_buf, sizeof(ws->wire_buf),
+                                     &ws->wire_len) ||
         flow_ir_load_bytes_fiber(&ws->ir_reloaded, ws->wire_buf, ws->wire_len) !=
             FLOW_IR_FIBER_COMMITTED) {
         return false;
@@ -577,26 +674,15 @@ static inline bool sound_cert_emit_norm_trap_fir(const sound_norm_trap_witness_t
         return false;
     }
     if (out_fir_path != NULL && out_fir_path[0] != '\0') {
-        FILE *fp = fopen(out_fir_path, "wb");
-        if (fp == NULL) {
-            return false;
-        }
-        size_t wr = fwrite(ws->wire_buf, 1U, ws->wire_len, fp);
-        int cls = fclose(fp);
-        if (wr != ws->wire_len || cls != 0) {
-            return false;
-        }
+        return flow_ir_write_bytes_file(out_fir_path, ws->wire_buf, ws->wire_len);
     }
     return true;
 }
 
-static inline bool sound_cert_emit_norm_trap_json(const sound_norm_trap_witness_t *w,
-                                                  const sound_cert_ws_t *ws, const char *path) {
-    if (w == NULL || path == NULL) {
-        return false;
-    }
-    FILE *fp = fopen(path, "wb");
-    if (fp == NULL) {
+static inline bool sound_cert_write_norm_trap_json_fp(const sound_norm_trap_witness_t *w,
+                                                      size_t fir_wire_bytes, bool fir_eval_ok,
+                                                      FILE *fp) {
+    if (w == NULL || fp == NULL) {
         return false;
     }
     fprintf(fp, "{\n");
@@ -619,11 +705,25 @@ static inline bool sound_cert_emit_norm_trap_json(const sound_norm_trap_witness_
     fprintf(fp, "  \"kanlock_both_energy\": %u,\n", (unsigned)w->kanlock_both_energy);
     fprintf(fp, "  \"freeze_ok\": %u,\n", (unsigned)w->freeze_ok);
     fprintf(fp, "  \"merkle\": \"0x%016llx\",\n", (unsigned long long)w->merkle);
-    fprintf(fp, "  \"fir_wire_bytes\": %zu,\n", (ws != NULL) ? ws->wire_len : 0U);
-    fprintf(fp, "  \"fir_eval_ok\": %s\n", (ws != NULL && ws->ir_eval_ok) ? "true" : "false");
+    fprintf(fp, "  \"fir_wire_bytes\": %zu,\n", fir_wire_bytes);
+    fprintf(fp, "  \"fir_eval_ok\": %s\n", fir_eval_ok ? "true" : "false");
     fprintf(fp, "}\n");
-    fclose(fp);
-    return true;
+    return ferror(fp) == 0;
+}
+
+static inline bool sound_cert_emit_norm_trap_json(const sound_norm_trap_witness_t *w,
+                                                  const sound_cert_ws_t *ws, const char *path) {
+    if (w == NULL || path == NULL) {
+        return false;
+    }
+    FILE *fp = fopen(path, "wb");
+    if (fp == NULL) {
+        return false;
+    }
+    bool ok = sound_cert_write_norm_trap_json_fp(w, (ws != NULL) ? ws->wire_len : 0U,
+                                                 (ws != NULL && ws->ir_eval_ok), fp);
+    int cls = fclose(fp);
+    return ok && (cls == 0);
 }
 
 /* ============================================================================
@@ -716,13 +816,10 @@ static inline bool sound_cert_emit_aspect_fir(const char *out_fir_path, sound_ce
     return ok;
 }
 
-static inline bool sound_cert_emit_aspect_json(const sound_aspect_witness_t *w,
-                                               const sound_cert_ws_t *ws, const char *path) {
-    if (w == NULL || path == NULL) {
-        return false;
-    }
-    FILE *fp = fopen(path, "wb");
-    if (fp == NULL) {
+static inline bool sound_cert_write_aspect_json_fp(const sound_aspect_witness_t *w,
+                                                   size_t fir_wire_bytes, bool fir_eval_ok,
+                                                   FILE *fp) {
+    if (w == NULL || fp == NULL) {
         return false;
     }
     fprintf(fp, "{\n");
@@ -736,11 +833,25 @@ static inline bool sound_cert_emit_aspect_json(const sound_aspect_witness_t *w,
     fprintf(fp, "  \"i_end\": %u,\n", (unsigned)w->i_end);
     fprintf(fp, "  \"declarative_atelic_fiber\": %u,\n", (unsigned)w->declarative_atelic_fiber);
     fprintf(fp, "  \"merkle\": \"0x%016llx\",\n", (unsigned long long)w->merkle);
-    fprintf(fp, "  \"fir_wire_bytes\": %zu,\n", (ws != NULL) ? ws->wire_len : 0U);
-    fprintf(fp, "  \"fir_eval_ok\": %s\n", (ws != NULL && ws->ir_eval_ok) ? "true" : "false");
+    fprintf(fp, "  \"fir_wire_bytes\": %zu,\n", fir_wire_bytes);
+    fprintf(fp, "  \"fir_eval_ok\": %s\n", fir_eval_ok ? "true" : "false");
     fprintf(fp, "}\n");
-    fclose(fp);
-    return true;
+    return ferror(fp) == 0;
+}
+
+static inline bool sound_cert_emit_aspect_json(const sound_aspect_witness_t *w,
+                                               const sound_cert_ws_t *ws, const char *path) {
+    if (w == NULL || path == NULL) {
+        return false;
+    }
+    FILE *fp = fopen(path, "wb");
+    if (fp == NULL) {
+        return false;
+    }
+    bool ok = sound_cert_write_aspect_json_fp(w, (ws != NULL) ? ws->wire_len : 0U,
+                                              (ws != NULL && ws->ir_eval_ok), fp);
+    int cls = fclose(fp);
+    return ok && (cls == 0);
 }
 
 /* ============================================================================
@@ -842,13 +953,10 @@ static inline bool sound_cert_emit_presup_fir(const char *out_fir_path, sound_ce
     return ok;
 }
 
-static inline bool sound_cert_emit_presup_json(const sound_presup_witness_t *w,
-                                               const sound_cert_ws_t *ws, const char *path) {
-    if (w == NULL || path == NULL) {
-        return false;
-    }
-    FILE *fp = fopen(path, "wb");
-    if (fp == NULL) {
+static inline bool sound_cert_write_presup_json_fp(const sound_presup_witness_t *w,
+                                                   size_t fir_wire_bytes, bool fir_eval_ok,
+                                                   FILE *fp) {
+    if (w == NULL || fp == NULL) {
         return false;
     }
     fprintf(fp, "{\n");
@@ -869,11 +977,25 @@ static inline bool sound_cert_emit_presup_json(const sound_presup_witness_t *w,
     fprintf(fp, "  \"force_irrealis_ok\": %u,\n", (unsigned)w->force_irrealis_ok);
     fprintf(fp, "  \"force_directive_ok\": %u,\n", (unsigned)w->force_directive_ok);
     fprintf(fp, "  \"merkle\": \"0x%016llx\",\n", (unsigned long long)w->merkle);
-    fprintf(fp, "  \"fir_wire_bytes\": %zu,\n", (ws != NULL) ? ws->wire_len : 0U);
-    fprintf(fp, "  \"fir_eval_ok\": %s\n", (ws != NULL && ws->ir_eval_ok) ? "true" : "false");
+    fprintf(fp, "  \"fir_wire_bytes\": %zu,\n", fir_wire_bytes);
+    fprintf(fp, "  \"fir_eval_ok\": %s\n", fir_eval_ok ? "true" : "false");
     fprintf(fp, "}\n");
-    fclose(fp);
-    return true;
+    return ferror(fp) == 0;
+}
+
+static inline bool sound_cert_emit_presup_json(const sound_presup_witness_t *w,
+                                               const sound_cert_ws_t *ws, const char *path) {
+    if (w == NULL || path == NULL) {
+        return false;
+    }
+    FILE *fp = fopen(path, "wb");
+    if (fp == NULL) {
+        return false;
+    }
+    bool ok = sound_cert_write_presup_json_fp(w, (ws != NULL) ? ws->wire_len : 0U,
+                                              (ws != NULL && ws->ir_eval_ok), fp);
+    int cls = fclose(fp);
+    return ok && (cls == 0);
 }
 
 /* ============================================================================
@@ -1143,14 +1265,11 @@ static inline bool sound_cert_emit_contract_fir(const sound_contract_audit_t *au
     return ok;
 }
 
-static inline bool sound_cert_emit_contract_json(const sound_contract_spec_t *spec,
-                                                 const sound_contract_audit_t *audit,
-                                                 const sound_cert_ws_t *ws, const char *path) {
-    if (spec == NULL || audit == NULL || path == NULL) {
-        return false;
-    }
-    FILE *fp = fopen(path, "wb");
-    if (fp == NULL) {
+static inline bool sound_cert_write_contract_json_fp(const sound_contract_spec_t *spec,
+                                                     const sound_contract_audit_t *audit,
+                                                     size_t fir_wire_bytes, bool fir_eval_ok,
+                                                     FILE *fp) {
+    if (spec == NULL || audit == NULL || fp == NULL) {
         return false;
     }
     uint32_t npred = audit->num_predatory_clauses;
@@ -1188,11 +1307,26 @@ static inline bool sound_cert_emit_contract_json(const sound_contract_spec_t *sp
     }
     fprintf(fp, "],\n");
     fprintf(fp, "  \"merkle\": \"0x%016llx\",\n", (unsigned long long)audit->merkle);
-    fprintf(fp, "  \"fir_wire_bytes\": %zu,\n", (ws != NULL) ? ws->wire_len : 0U);
-    fprintf(fp, "  \"fir_eval_ok\": %s\n", (ws != NULL && ws->ir_eval_ok) ? "true" : "false");
+    fprintf(fp, "  \"fir_wire_bytes\": %zu,\n", fir_wire_bytes);
+    fprintf(fp, "  \"fir_eval_ok\": %s\n", fir_eval_ok ? "true" : "false");
     fprintf(fp, "}\n");
-    fclose(fp);
-    return true;
+    return ferror(fp) == 0;
+}
+
+static inline bool sound_cert_emit_contract_json(const sound_contract_spec_t *spec,
+                                                 const sound_contract_audit_t *audit,
+                                                 const sound_cert_ws_t *ws, const char *path) {
+    if (spec == NULL || audit == NULL || path == NULL) {
+        return false;
+    }
+    FILE *fp = fopen(path, "wb");
+    if (fp == NULL) {
+        return false;
+    }
+    bool ok = sound_cert_write_contract_json_fp(spec, audit, (ws != NULL) ? ws->wire_len : 0U,
+                                                (ws != NULL && ws->ir_eval_ok), fp);
+    int cls = fclose(fp);
+    return ok && (cls == 0);
 }
 
 static inline bool sound_cert_emit_contract_receipt(const sound_contract_spec_t *spec,
@@ -1311,6 +1445,746 @@ static inline bool sound_cert_emit_contract_receipt(const sound_contract_spec_t 
     }
     fclose(fp);
     return true;
+}
+
+/* ============================================================================
+ * 8. Canonical "SNDC" Binary Contract & Witness Certificate Codec
+ * ============================================================================
+ * Uses FLOW's freestanding canonical ULEB128 varints & FNV-1a-64 trailer
+ * (../FLOW/sdk/flow_wire_pack.h) with zero heap allocation and bit-exact
+ * struct/JSON roundtrip.
+ * ============================================================================ */
+
+static inline bool sound_wire__put_zigzag64(uint8_t *buf, size_t cap, size_t *pos, int64_t v) {
+    uint64_t zz =
+        (v >= 0) ? (((uint64_t)v) << 1U) : ((((uint64_t)(-(v + (int64_t)1))) << 1U) | UINT64_C(1));
+    return flow_wire_put_varu64(buf, cap, pos, zz);
+}
+
+static inline bool sound_wire__get_zigzag64(const uint8_t *buf, size_t end, size_t *pos,
+                                            int64_t *out) {
+    if (out == NULL) {
+        return false;
+    }
+    uint64_t zz = UINT64_C(0);
+    if (!flow_wire_get_varu64(buf, end, pos, &zz)) {
+        return false;
+    }
+    uint64_t mag = zz >> 1U;
+    *out = ((zz & UINT64_C(1)) != UINT64_C(0)) ? (-(int64_t)mag - (int64_t)1) : (int64_t)mag;
+    return true;
+}
+
+static inline bool sound_wire__put_contract_spec(uint8_t *buf, size_t cap, size_t *pos,
+                                                 const sound_contract_spec_t *spec) {
+    if (spec == NULL || spec->num_clauses > SOUND_CONTRACT_MAX_CLAUSES ||
+        spec->num_edges > SOUND_CONTRACT_MAX_EDGES) {
+        return false;
+    }
+    if (!flow_wire_put_varu64(buf, cap, pos, spec->seed) ||
+        !flow_wire_put_varu64(buf, cap, pos, spec->max_loss_cap) ||
+        !flow_wire_put_varu64(buf, cap, pos, spec->max_exit_fee) ||
+        !flow_wire_put_varu64(buf, cap, pos, spec->protected_mask) ||
+        !flow_wire_put_varu64(buf, cap, pos, spec->max_asym_num) ||
+        !flow_wire_put_varu64(buf, cap, pos, spec->max_asym_den) ||
+        !flow_wire_put_varu32(buf, cap, pos, spec->num_clauses) ||
+        !flow_wire_put_varu32(buf, cap, pos, spec->num_edges) ||
+        !flow_wire_put_varu32(buf, cap, pos, spec->coverage_gaps)) {
+        return false;
+    }
+    for (uint32_t i = 0U; i < spec->num_clauses; i++) {
+        const sound_contract_clause_t *c = &spec->clauses[i];
+        if (!flow_wire_put_varu32(buf, cap, pos, c->clause_id) ||
+            !flow_wire_put_u8(buf, cap, pos, c->kind) ||
+            !flow_wire_put_u8(buf, cap, pos, c->disclosed) ||
+            !flow_wire_put_u8(buf, cap, pos, c->b4_truth) ||
+            !flow_wire_put_u8(buf, cap, pos, c->sheaf_cycle) ||
+            !flow_wire_put_varu64(buf, cap, pos, c->target_mask) ||
+            !flow_wire_put_varu64(buf, cap, pos, c->base_loss) ||
+            !flow_wire_put_varu64(buf, cap, pos, c->extra_drift) ||
+            !flow_wire_put_varu64(buf, cap, pos, c->exit_fee) ||
+            !flow_wire_put_varu64(buf, cap, pos, c->cons_penalty) ||
+            !flow_wire_put_varu64(buf, cap, pos, c->inst_penalty)) {
+            return false;
+        }
+    }
+    for (uint32_t i = 0U; i < spec->num_edges; i++) {
+        const sound_contract_edge_t *e = &spec->edges[i];
+        if (!flow_wire_put_varu32(buf, cap, pos, e->src) ||
+            !flow_wire_put_varu32(buf, cap, pos, e->dst) ||
+            !flow_wire_put_u8(buf, cap, pos, e->edge_kind) ||
+            !flow_wire_put_u8(buf, cap, pos, e->cocycle_shift) ||
+            !flow_wire_put_varu64(buf, cap, pos, e->extra_exposure)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static inline bool sound_wire__get_contract_spec(const uint8_t *buf, size_t end, size_t *pos,
+                                                 sound_contract_spec_t *spec) {
+    if (spec == NULL) {
+        return false;
+    }
+    sound_zero_bytes(spec, sizeof(*spec));
+    if (!flow_wire_get_varu64(buf, end, pos, &spec->seed) ||
+        !flow_wire_get_varu64(buf, end, pos, &spec->max_loss_cap) ||
+        !flow_wire_get_varu64(buf, end, pos, &spec->max_exit_fee) ||
+        !flow_wire_get_varu64(buf, end, pos, &spec->protected_mask) ||
+        !flow_wire_get_varu64(buf, end, pos, &spec->max_asym_num) ||
+        !flow_wire_get_varu64(buf, end, pos, &spec->max_asym_den) ||
+        !flow_wire_get_varu32(buf, end, pos, &spec->num_clauses) ||
+        !flow_wire_get_varu32(buf, end, pos, &spec->num_edges) ||
+        !flow_wire_get_varu32(buf, end, pos, &spec->coverage_gaps)) {
+        return false;
+    }
+    if (spec->num_clauses > SOUND_CONTRACT_MAX_CLAUSES ||
+        spec->num_edges > SOUND_CONTRACT_MAX_EDGES) {
+        return false;
+    }
+    for (uint32_t i = 0U; i < spec->num_clauses; i++) {
+        sound_contract_clause_t *c = &spec->clauses[i];
+        if (!flow_wire_get_varu32(buf, end, pos, &c->clause_id) ||
+            !flow_wire_get_u8(buf, end, pos, &c->kind) ||
+            !flow_wire_get_u8(buf, end, pos, &c->disclosed) ||
+            !flow_wire_get_u8(buf, end, pos, &c->b4_truth) ||
+            !flow_wire_get_u8(buf, end, pos, &c->sheaf_cycle) ||
+            !flow_wire_get_varu64(buf, end, pos, &c->target_mask) ||
+            !flow_wire_get_varu64(buf, end, pos, &c->base_loss) ||
+            !flow_wire_get_varu64(buf, end, pos, &c->extra_drift) ||
+            !flow_wire_get_varu64(buf, end, pos, &c->exit_fee) ||
+            !flow_wire_get_varu64(buf, end, pos, &c->cons_penalty) ||
+            !flow_wire_get_varu64(buf, end, pos, &c->inst_penalty)) {
+            return false;
+        }
+    }
+    for (uint32_t i = 0U; i < spec->num_edges; i++) {
+        sound_contract_edge_t *e = &spec->edges[i];
+        if (!flow_wire_get_varu32(buf, end, pos, &e->src) ||
+            !flow_wire_get_varu32(buf, end, pos, &e->dst) ||
+            !flow_wire_get_u8(buf, end, pos, &e->edge_kind) ||
+            !flow_wire_get_u8(buf, end, pos, &e->cocycle_shift) ||
+            !flow_wire_get_varu64(buf, end, pos, &e->extra_exposure)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static inline bool sound_wire__put_contract_audit(uint8_t *buf, size_t cap, size_t *pos,
+                                                  uint32_t num_clauses,
+                                                  const sound_contract_audit_t *audit) {
+    if (audit == NULL || num_clauses > SOUND_CONTRACT_MAX_CLAUSES ||
+        audit->num_predatory_clauses > SOUND_CONTRACT_MAX_CLAUSES) {
+        return false;
+    }
+    if (!flow_wire_put_varu32(buf, cap, pos, audit->certified) ||
+        !flow_wire_put_varu32(buf, cap, pos, audit->viol_flags) ||
+        !flow_wire_put_varu32(buf, cap, pos, audit->num_predatory_clauses) ||
+        !flow_wire_put_varu32(buf, cap, pos, audit->repaired_certified) ||
+        !flow_wire_put_varu32(buf, cap, pos, audit->num_malicious_edges) ||
+        !flow_wire_put_varu32(buf, cap, pos, audit->graph_sheaf_h1_obstructed) ||
+        !flow_wire_put_varu32(buf, cap, pos, audit->graph_bypass_mask) ||
+        !flow_wire_put_varu64(buf, cap, pos, audit->base_loss_sum) ||
+        !flow_wire_put_varu64(buf, cap, pos, audit->edge_exposure_sum) ||
+        !flow_wire_put_varu64(buf, cap, pos, audit->worst_case_loss) ||
+        !sound_wire__put_zigzag64(buf, cap, pos, audit->benefit_drift) ||
+        !flow_wire_put_varu64(buf, cap, pos, audit->max_exit_seen) ||
+        !flow_wire_put_varu64(buf, cap, pos, audit->repaired_worst_loss) ||
+        !flow_wire_put_varu64(buf, cap, pos, audit->merkle)) {
+        return false;
+    }
+    for (uint32_t i = 0U; i < audit->num_predatory_clauses; i++) {
+        if (!flow_wire_put_varu32(buf, cap, pos, audit->predatory_clause_ids[i])) {
+            return false;
+        }
+    }
+    for (uint32_t i = 0U; i < num_clauses; i++) {
+        if (!flow_wire_put_varu32(buf, cap, pos, audit->clause_viol_masks[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static inline bool sound_wire__get_contract_audit(const uint8_t *buf, size_t end, size_t *pos,
+                                                  uint32_t num_clauses,
+                                                  sound_contract_audit_t *audit) {
+    if (audit == NULL || num_clauses > SOUND_CONTRACT_MAX_CLAUSES) {
+        return false;
+    }
+    sound_zero_bytes(audit, sizeof(*audit));
+    if (!flow_wire_get_varu32(buf, end, pos, &audit->certified) ||
+        !flow_wire_get_varu32(buf, end, pos, &audit->viol_flags) ||
+        !flow_wire_get_varu32(buf, end, pos, &audit->num_predatory_clauses) ||
+        !flow_wire_get_varu32(buf, end, pos, &audit->repaired_certified) ||
+        !flow_wire_get_varu32(buf, end, pos, &audit->num_malicious_edges) ||
+        !flow_wire_get_varu32(buf, end, pos, &audit->graph_sheaf_h1_obstructed) ||
+        !flow_wire_get_varu32(buf, end, pos, &audit->graph_bypass_mask) ||
+        !flow_wire_get_varu64(buf, end, pos, &audit->base_loss_sum) ||
+        !flow_wire_get_varu64(buf, end, pos, &audit->edge_exposure_sum) ||
+        !flow_wire_get_varu64(buf, end, pos, &audit->worst_case_loss) ||
+        !sound_wire__get_zigzag64(buf, end, pos, &audit->benefit_drift) ||
+        !flow_wire_get_varu64(buf, end, pos, &audit->max_exit_seen) ||
+        !flow_wire_get_varu64(buf, end, pos, &audit->repaired_worst_loss) ||
+        !flow_wire_get_varu64(buf, end, pos, &audit->merkle)) {
+        return false;
+    }
+    if (audit->num_predatory_clauses > SOUND_CONTRACT_MAX_CLAUSES) {
+        return false;
+    }
+    for (uint32_t i = 0U; i < audit->num_predatory_clauses; i++) {
+        if (!flow_wire_get_varu32(buf, end, pos, &audit->predatory_clause_ids[i])) {
+            return false;
+        }
+    }
+    for (uint32_t i = 0U; i < num_clauses; i++) {
+        if (!flow_wire_get_varu32(buf, end, pos, &audit->clause_viol_masks[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static inline bool sound_cert_pack_contract_spec(const sound_contract_spec_t *spec, uint8_t *buf,
+                                                 size_t cap, size_t *out_len) {
+    if (spec == NULL || buf == NULL || out_len == NULL || cap < 16U) {
+        return false;
+    }
+    size_t body_cap = cap - 8U;
+    flow_ir_wire_write_le32(buf + 0U, SOUND_CERT_PACK_MAGIC);
+    buf[4] = SOUND_CERT_PACK_VERSION;
+    buf[5] = (uint8_t)SOUND_WIRE_KIND_CONTRACT_SPEC;
+    buf[6] = UINT8_C(0);
+    buf[7] = UINT8_C(0);
+    size_t pos = 8U;
+    if (!sound_wire__put_contract_spec(buf, body_cap, &pos, spec)) {
+        return false;
+    }
+    *out_len = flow_ir_wire_seal_trailer(buf, pos);
+    return true;
+}
+
+static inline bool sound_cert_unpack_contract_spec(const uint8_t *buf, size_t len,
+                                                   sound_contract_spec_t *spec_out) {
+    if (buf == NULL || spec_out == NULL || len < 16U) {
+        return false;
+    }
+    if (flow_ir_wire_read_le32(buf + 0U) != SOUND_CERT_PACK_MAGIC ||
+        buf[4] != SOUND_CERT_PACK_VERSION || buf[5] != (uint8_t)SOUND_WIRE_KIND_CONTRACT_SPEC ||
+        buf[6] != UINT8_C(0) || buf[7] != UINT8_C(0)) {
+        return false;
+    }
+    size_t body_len = len - 8U;
+    if (flow_ir_wire_read_le64(buf + body_len) != flow_ir_wire_fnv1a64(buf, body_len)) {
+        return false;
+    }
+    size_t pos = 8U;
+    return sound_wire__get_contract_spec(buf, body_len, &pos, spec_out) && (pos == body_len);
+}
+
+static inline bool sound_cert_pack_contract_cert(const sound_contract_spec_t *spec,
+                                                 const sound_contract_audit_t *audit,
+                                                 const sound_cert_ws_t *ws, uint8_t *buf,
+                                                 size_t cap, size_t *out_len) {
+    if (spec == NULL || audit == NULL || buf == NULL || out_len == NULL || cap < 16U) {
+        return false;
+    }
+    size_t body_cap = cap - 8U;
+    flow_ir_wire_write_le32(buf + 0U, SOUND_CERT_PACK_MAGIC);
+    buf[4] = SOUND_CERT_PACK_VERSION;
+    buf[5] = (uint8_t)SOUND_WIRE_KIND_CONTRACT_CERT;
+    buf[6] = UINT8_C(0);
+    buf[7] = (ws != NULL && ws->ir_eval_ok) ? UINT8_C(1) : UINT8_C(0);
+    size_t pos = 8U;
+    uint64_t fbytes = (ws != NULL) ? (uint64_t)ws->wire_len : UINT64_C(0);
+    if (!flow_wire_put_varu64(buf, body_cap, &pos, fbytes) ||
+        !sound_wire__put_contract_spec(buf, body_cap, &pos, spec) ||
+        !sound_wire__put_contract_audit(buf, body_cap, &pos, spec->num_clauses, audit)) {
+        return false;
+    }
+    *out_len = flow_ir_wire_seal_trailer(buf, pos);
+    return true;
+}
+
+static inline bool sound_cert_unpack_contract_cert(const uint8_t *buf, size_t len,
+                                                   sound_contract_spec_t *spec_out,
+                                                   sound_contract_audit_t *audit_out,
+                                                   size_t *fir_wire_bytes_out,
+                                                   bool *fir_eval_ok_out) {
+    if (buf == NULL || spec_out == NULL || audit_out == NULL || len < 16U) {
+        return false;
+    }
+    if (flow_ir_wire_read_le32(buf + 0U) != SOUND_CERT_PACK_MAGIC ||
+        buf[4] != SOUND_CERT_PACK_VERSION || buf[5] != (uint8_t)SOUND_WIRE_KIND_CONTRACT_CERT ||
+        buf[6] != UINT8_C(0) || (buf[7] & UINT8_C(0xFE)) != UINT8_C(0)) {
+        return false;
+    }
+    size_t body_len = len - 8U;
+    if (flow_ir_wire_read_le64(buf + body_len) != flow_ir_wire_fnv1a64(buf, body_len)) {
+        return false;
+    }
+    size_t pos = 8U;
+    uint64_t fbytes = UINT64_C(0);
+    if (!flow_wire_get_varu64(buf, body_len, &pos, &fbytes) ||
+        !sound_wire__get_contract_spec(buf, body_len, &pos, spec_out) ||
+        !sound_wire__get_contract_audit(buf, body_len, &pos, spec_out->num_clauses, audit_out) ||
+        pos != body_len) {
+        return false;
+    }
+    if (fir_wire_bytes_out != NULL) {
+        *fir_wire_bytes_out = (size_t)fbytes;
+    }
+    if (fir_eval_ok_out != NULL) {
+        *fir_eval_ok_out = (buf[7] & UINT8_C(1)) != UINT8_C(0);
+    }
+    return true;
+}
+
+static inline bool sound_cert_pack_hunt_witness(sound_hunt_mode_t mode, const void *witness,
+                                                const sound_cert_ws_t *ws, uint8_t *buf, size_t cap,
+                                                size_t *out_len) {
+    if (witness == NULL || buf == NULL || out_len == NULL || cap < 16U) {
+        return false;
+    }
+    size_t body_cap = cap - 8U;
+    flow_ir_wire_write_le32(buf + 0U, SOUND_CERT_PACK_MAGIC);
+    buf[4] = SOUND_CERT_PACK_VERSION;
+    buf[5] = (uint8_t)SOUND_WIRE_KIND_HUNT_WITNESS;
+    buf[6] = (uint8_t)mode;
+    buf[7] = (ws != NULL && ws->ir_eval_ok) ? UINT8_C(1) : UINT8_C(0);
+    size_t pos = 8U;
+    uint64_t fbytes = (ws != NULL) ? (uint64_t)ws->wire_len : UINT64_C(0);
+    if (!flow_wire_put_varu64(buf, body_cap, &pos, fbytes)) {
+        return false;
+    }
+    if (mode == SOUND_HUNT_MODE_PARADOX_MIN) {
+        const sound_paradox_witness_t *w = (const sound_paradox_witness_t *)witness;
+        if (!flow_wire_put_varu32(buf, body_cap, &pos, w->num_nodes) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->atk_to[0]) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->atk_to[1]) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->atk_to[2]) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->i_star) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->p_star) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->conflict_mask) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->is_odd_cycle) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->classical_models) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->seed) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->merkle)) {
+            return false;
+        }
+    } else if (mode == SOUND_HUNT_MODE_SHEAF_H1) {
+        const sound_sheaf_witness_t *w = (const sound_sheaf_witness_t *)witness;
+        if (!flow_wire_put_u8(buf, body_cap, &pos, w->g01) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->g12) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->g20) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->holonomy_z4) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->phi[0]) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->phi[1]) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->phi[2]) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->sg01) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->sg12) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->sg20) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->gauge_holonomy_z4) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->is_coboundary_z4) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->skew_symmetric_ok) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->t01) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->t12) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->t20) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->xor_holonomy) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->seed) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->merkle)) {
+            return false;
+        }
+    } else if (mode == SOUND_HUNT_MODE_CHISHOLM) {
+        const sound_chisholm_witness_t *w = (const sound_chisholm_witness_t *)witness;
+        if (!flow_wire_put_varu32(buf, body_cap, &pos, w->num_nodes) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->established_mask) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->defeated_mask) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->conflict_mask) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->penumbra_mask) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->statuses[0]) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->statuses[1]) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->statuses[2]) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->statuses[3]) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->hohfeld_ok) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->merkle)) {
+            return false;
+        }
+    } else if (mode == SOUND_HUNT_MODE_NORM_TRAP) {
+        const sound_norm_trap_witness_t *w = (const sound_norm_trap_witness_t *)witness;
+        if (!flow_wire_put_varu64(buf, body_cap, &pos, w->init_pos) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->init_neg) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->power) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->immunity) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->final_pos) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->final_neg) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->step_slot[0]) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->step_slot[1]) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->step_slot[2]) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->step_slot[3]) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->step_fiber[0]) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->step_fiber[1]) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->step_fiber[2]) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->step_fiber[3]) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, (uint32_t)w->tie_weight) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->energy_keep_a) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->energy_keep_b) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->energy_both) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->energy_neither) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->kanlock_win_energy) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->kanlock_both_energy) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->freeze_ok) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->seed) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->merkle)) {
+            return false;
+        }
+    } else if (mode == SOUND_HUNT_MODE_ASPECT_FIREWALL) {
+        const sound_aspect_witness_t *w = (const sound_aspect_witness_t *)witness;
+        if (!flow_wire_put_varu32(buf, body_cap, &pos, w->aspect_bijection_ok) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->telic_blocked_mask) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->j_start) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->j_end) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->i_start) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->i_end) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->state_gate_telic) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->activity_gate_telic) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->accomplishment_gate_telic) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->achievement_gate_telic) ||
+            !flow_wire_put_varu32(buf, body_cap, &pos, w->declarative_atelic_fiber) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->seed) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->merkle)) {
+            return false;
+        }
+    } else if (mode == SOUND_HUNT_MODE_PRESUP_FILTER) {
+        const sound_presup_witness_t *w = (const sound_presup_witness_t *)witness;
+        if (!flow_wire_put_u8(buf, body_cap, &pos, w->a_assert) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->a_presup) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->b_assert) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->b_presup) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->eval_fail_b) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->eval_neg_fail_b) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->plug_presup) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->plug_eval) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->cond_false_presup) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->cond_true_presup) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->force_hume_ok) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->force_query_ok) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->force_irrealis_ok) ||
+            !flow_wire_put_u8(buf, body_cap, &pos, w->force_directive_ok) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->seed) ||
+            !flow_wire_put_varu64(buf, body_cap, &pos, w->merkle)) {
+            return false;
+        }
+    } else {
+        return false;
+    }
+    *out_len = flow_ir_wire_seal_trailer(buf, pos);
+    return true;
+}
+
+static inline bool sound_cert_unpack_hunt_witness(const uint8_t *buf, size_t len,
+                                                  sound_hunt_mode_t *mode_out, void *witness_out,
+                                                  size_t witness_cap, size_t *fir_wire_bytes_out,
+                                                  bool *fir_eval_ok_out) {
+    if (buf == NULL || witness_out == NULL || len < 16U) {
+        return false;
+    }
+    if (flow_ir_wire_read_le32(buf + 0U) != SOUND_CERT_PACK_MAGIC ||
+        buf[4] != SOUND_CERT_PACK_VERSION || buf[5] != (uint8_t)SOUND_WIRE_KIND_HUNT_WITNESS ||
+        (buf[7] & UINT8_C(0xFE)) != UINT8_C(0)) {
+        return false;
+    }
+    size_t body_len = len - 8U;
+    if (flow_ir_wire_read_le64(buf + body_len) != flow_ir_wire_fnv1a64(buf, body_len)) {
+        return false;
+    }
+    sound_hunt_mode_t mode = (sound_hunt_mode_t)buf[6];
+    size_t pos = 8U;
+    uint64_t fbytes = UINT64_C(0);
+    if (!flow_wire_get_varu64(buf, body_len, &pos, &fbytes)) {
+        return false;
+    }
+    if (mode == SOUND_HUNT_MODE_PARADOX_MIN) {
+        if (witness_cap < sizeof(sound_paradox_witness_t)) {
+            return false;
+        }
+        sound_paradox_witness_t *w = (sound_paradox_witness_t *)witness_out;
+        sound_zero_bytes(w, sizeof(*w));
+        if (!flow_wire_get_varu32(buf, body_len, &pos, &w->num_nodes) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->atk_to[0]) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->atk_to[1]) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->atk_to[2]) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->i_star) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->p_star) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->conflict_mask) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->is_odd_cycle) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->classical_models) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->seed) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->merkle)) {
+            return false;
+        }
+    } else if (mode == SOUND_HUNT_MODE_SHEAF_H1) {
+        if (witness_cap < sizeof(sound_sheaf_witness_t)) {
+            return false;
+        }
+        sound_sheaf_witness_t *w = (sound_sheaf_witness_t *)witness_out;
+        sound_zero_bytes(w, sizeof(*w));
+        if (!flow_wire_get_u8(buf, body_len, &pos, &w->g01) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->g12) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->g20) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->holonomy_z4) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->phi[0]) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->phi[1]) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->phi[2]) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->sg01) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->sg12) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->sg20) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->gauge_holonomy_z4) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->is_coboundary_z4) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->skew_symmetric_ok) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->t01) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->t12) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->t20) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->xor_holonomy) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->seed) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->merkle)) {
+            return false;
+        }
+    } else if (mode == SOUND_HUNT_MODE_CHISHOLM) {
+        if (witness_cap < sizeof(sound_chisholm_witness_t)) {
+            return false;
+        }
+        sound_chisholm_witness_t *w = (sound_chisholm_witness_t *)witness_out;
+        sound_zero_bytes(w, sizeof(*w));
+        if (!flow_wire_get_varu32(buf, body_len, &pos, &w->num_nodes) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->established_mask) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->defeated_mask) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->conflict_mask) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->penumbra_mask) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->statuses[0]) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->statuses[1]) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->statuses[2]) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->statuses[3]) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->hohfeld_ok) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->merkle)) {
+            return false;
+        }
+    } else if (mode == SOUND_HUNT_MODE_NORM_TRAP) {
+        if (witness_cap < sizeof(sound_norm_trap_witness_t)) {
+            return false;
+        }
+        sound_norm_trap_witness_t *w = (sound_norm_trap_witness_t *)witness_out;
+        sound_zero_bytes(w, sizeof(*w));
+        uint32_t tw = 0U;
+        if (!flow_wire_get_varu64(buf, body_len, &pos, &w->init_pos) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->init_neg) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->power) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->immunity) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->final_pos) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->final_neg) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->step_slot[0]) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->step_slot[1]) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->step_slot[2]) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->step_slot[3]) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->step_fiber[0]) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->step_fiber[1]) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->step_fiber[2]) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->step_fiber[3]) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &tw) || tw > UINT16_MAX ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->energy_keep_a) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->energy_keep_b) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->energy_both) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->energy_neither) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->kanlock_win_energy) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->kanlock_both_energy) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->freeze_ok) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->seed) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->merkle)) {
+            return false;
+        }
+        w->tie_weight = (uint16_t)tw;
+    } else if (mode == SOUND_HUNT_MODE_ASPECT_FIREWALL) {
+        if (witness_cap < sizeof(sound_aspect_witness_t)) {
+            return false;
+        }
+        sound_aspect_witness_t *w = (sound_aspect_witness_t *)witness_out;
+        sound_zero_bytes(w, sizeof(*w));
+        if (!flow_wire_get_varu32(buf, body_len, &pos, &w->aspect_bijection_ok) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->telic_blocked_mask) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->j_start) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->j_end) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->i_start) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->i_end) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->state_gate_telic) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->activity_gate_telic) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->accomplishment_gate_telic) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->achievement_gate_telic) ||
+            !flow_wire_get_varu32(buf, body_len, &pos, &w->declarative_atelic_fiber) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->seed) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->merkle)) {
+            return false;
+        }
+    } else if (mode == SOUND_HUNT_MODE_PRESUP_FILTER) {
+        if (witness_cap < sizeof(sound_presup_witness_t)) {
+            return false;
+        }
+        sound_presup_witness_t *w = (sound_presup_witness_t *)witness_out;
+        sound_zero_bytes(w, sizeof(*w));
+        if (!flow_wire_get_u8(buf, body_len, &pos, &w->a_assert) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->a_presup) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->b_assert) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->b_presup) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->eval_fail_b) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->eval_neg_fail_b) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->plug_presup) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->plug_eval) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->cond_false_presup) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->cond_true_presup) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->force_hume_ok) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->force_query_ok) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->force_irrealis_ok) ||
+            !flow_wire_get_u8(buf, body_len, &pos, &w->force_directive_ok) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->seed) ||
+            !flow_wire_get_varu64(buf, body_len, &pos, &w->merkle)) {
+            return false;
+        }
+    } else {
+        return false;
+    }
+    if (pos != body_len) {
+        return false;
+    }
+    if (mode_out != NULL) {
+        *mode_out = mode;
+    }
+    if (fir_wire_bytes_out != NULL) {
+        *fir_wire_bytes_out = (size_t)fbytes;
+    }
+    if (fir_eval_ok_out != NULL) {
+        *fir_eval_ok_out = (buf[7] & UINT8_C(1)) != UINT8_C(0);
+    }
+    return true;
+}
+
+static inline bool sound_cert_verify_bytes(const uint8_t *buf, size_t len, uint8_t *kind_out,
+                                           uint8_t *submode_out) {
+    if (buf == NULL || len < 16U) {
+        return false;
+    }
+    if (flow_ir_wire_read_le32(buf + 0U) != SOUND_CERT_PACK_MAGIC ||
+        buf[4] != SOUND_CERT_PACK_VERSION) {
+        return false;
+    }
+    uint8_t kind = buf[5];
+    uint8_t sub = buf[6];
+    if (kind == (uint8_t)SOUND_WIRE_KIND_CONTRACT_SPEC) {
+        static sound_contract_spec_t spec;
+        if (!sound_cert_unpack_contract_spec(buf, len, &spec)) {
+            return false;
+        }
+    } else if (kind == (uint8_t)SOUND_WIRE_KIND_CONTRACT_CERT) {
+        static sound_contract_spec_t spec;
+        static sound_contract_audit_t audit;
+        if (!sound_cert_unpack_contract_cert(buf, len, &spec, &audit, NULL, NULL)) {
+            return false;
+        }
+    } else if (kind == (uint8_t)SOUND_WIRE_KIND_HUNT_WITNESS) {
+        uint8_t wbuf[256];
+        sound_hunt_mode_t m = SOUND_HUNT_MODE_PARADOX_MIN;
+        if (!sound_cert_unpack_hunt_witness(buf, len, &m, wbuf, sizeof(wbuf), NULL, NULL)) {
+            return false;
+        }
+    } else {
+        return false;
+    }
+    if (kind_out != NULL) {
+        *kind_out = kind;
+    }
+    if (submode_out != NULL) {
+        *submode_out = sub;
+    }
+    return true;
+}
+
+static inline bool sound_cert_unpack_to_json_fp(const uint8_t *buf, size_t len, FILE *fp) {
+    if (buf == NULL || fp == NULL || len < 16U) {
+        return false;
+    }
+    uint8_t kind = buf[5];
+    if (kind == (uint8_t)SOUND_WIRE_KIND_CONTRACT_CERT) {
+        static sound_contract_spec_t spec;
+        static sound_contract_audit_t audit;
+        size_t fbytes = 0U;
+        bool feval = false;
+        if (!sound_cert_unpack_contract_cert(buf, len, &spec, &audit, &fbytes, &feval)) {
+            return false;
+        }
+        return sound_cert_write_contract_json_fp(&spec, &audit, fbytes, feval, fp);
+    }
+    if (kind == (uint8_t)SOUND_WIRE_KIND_HUNT_WITNESS) {
+        sound_hunt_mode_t mode = (sound_hunt_mode_t)buf[6];
+        size_t fbytes = 0U;
+        bool feval = false;
+        if (mode == SOUND_HUNT_MODE_PARADOX_MIN) {
+            sound_paradox_witness_t w;
+            return sound_cert_unpack_hunt_witness(buf, len, &mode, &w, sizeof(w), &fbytes,
+                                                  &feval) &&
+                   sound_cert_write_paradox_json_fp(&w, fbytes, feval, fp);
+        }
+        if (mode == SOUND_HUNT_MODE_SHEAF_H1) {
+            sound_sheaf_witness_t w;
+            return sound_cert_unpack_hunt_witness(buf, len, &mode, &w, sizeof(w), &fbytes,
+                                                  &feval) &&
+                   sound_cert_write_sheaf_json_fp(&w, fbytes, feval, fp);
+        }
+        if (mode == SOUND_HUNT_MODE_CHISHOLM) {
+            sound_chisholm_witness_t w;
+            return sound_cert_unpack_hunt_witness(buf, len, &mode, &w, sizeof(w), &fbytes,
+                                                  &feval) &&
+                   sound_cert_write_chisholm_json_fp(&w, fbytes, feval, fp);
+        }
+        if (mode == SOUND_HUNT_MODE_NORM_TRAP) {
+            sound_norm_trap_witness_t w;
+            return sound_cert_unpack_hunt_witness(buf, len, &mode, &w, sizeof(w), &fbytes,
+                                                  &feval) &&
+                   sound_cert_write_norm_trap_json_fp(&w, fbytes, feval, fp);
+        }
+        if (mode == SOUND_HUNT_MODE_ASPECT_FIREWALL) {
+            sound_aspect_witness_t w;
+            return sound_cert_unpack_hunt_witness(buf, len, &mode, &w, sizeof(w), &fbytes,
+                                                  &feval) &&
+                   sound_cert_write_aspect_json_fp(&w, fbytes, feval, fp);
+        }
+        if (mode == SOUND_HUNT_MODE_PRESUP_FILTER) {
+            sound_presup_witness_t w;
+            return sound_cert_unpack_hunt_witness(buf, len, &mode, &w, sizeof(w), &fbytes,
+                                                  &feval) &&
+                   sound_cert_write_presup_json_fp(&w, fbytes, feval, fp);
+        }
+    }
+    return false;
+}
+
+static inline bool sound_cert_emit_contract_cert_file(const sound_contract_spec_t *spec,
+                                                      const sound_contract_audit_t *audit,
+                                                      const sound_cert_ws_t *ws, const char *path) {
+    static uint8_t buf[SOUND_CERT_MAX_BYTES];
+    size_t len = 0U;
+    if (path == NULL || !sound_cert_pack_contract_cert(spec, audit, ws, buf, sizeof(buf), &len)) {
+        return false;
+    }
+    return flow_ir_write_bytes_file(path, buf, len);
+}
+
+static inline bool sound_cert_emit_hunt_cert_file(sound_hunt_mode_t mode, const void *witness,
+                                                  const sound_cert_ws_t *ws, const char *path) {
+    static uint8_t buf[SOUND_CERT_MAX_BYTES];
+    size_t len = 0U;
+    if (path == NULL || !sound_cert_pack_hunt_witness(mode, witness, ws, buf, sizeof(buf), &len)) {
+        return false;
+    }
+    return flow_ir_write_bytes_file(path, buf, len);
 }
 
 #endif /* SOUND_CERT_H */

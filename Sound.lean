@@ -5,8 +5,8 @@
   plus local formal bilattice theorems in `Sound/Bilattice.lean`.
   This file configures the 256-slot `16,384B` `soundArenaSchema`, declares the 10
   canonical golden soundness cases, emits `build/sound_schema_abi.h` (0 `memcpy`),
-  and emits `.snd`, `.fir`, and `golden_manifest.json` with ZERO local definitions of
-  theorems, lemmas, or axioms.
+  and emits canonical packed `.flwa` (`"FLWA"`), `.fir2` (`"FIR2"`), and
+  `golden_manifest.json` with ZERO local definitions of theorems, lemmas, or axioms.
 -/
 
 import Flow.Core
@@ -257,7 +257,8 @@ private def clauseEntries (supports : List (List Nat)) : List (String × Int) :=
       out := u64Kv s!"clauses[{cIdx}]" cmask :: out
     return out.reverse
 
-def buildSealedArenaBytes (nodes : List EpistemicNode) (slots : NormativeSlots) : Option ByteArray := do
+def buildSealedArenaCells (nodes : List EpistemicNode) (slots : NormativeSlots) :
+    Option (Array Flow.Cell64) := do
   if nodes.length > 64 then
     none
   let mut cells : Array Flow.Cell64 := Id.run do
@@ -314,7 +315,78 @@ def buildSealedArenaBytes (nodes : List EpistemicNode) (slots : NormativeSlots) 
     u64Kv "merkle_root" merkle,
     ("reserved_tail", 0)
   ]
-  return hdrCell.toBytes ++ tailBytes
+  return cells.set! 0 hdrCell
+
+def buildSealedArenaBytes (nodes : List EpistemicNode) (slots : NormativeSlots) : Option ByteArray := do
+  let cells ← buildSealedArenaCells nodes slots
+  let mut out := ByteArray.empty
+  for c in cells do
+    out := out ++ c.toBytes
+  return out
+
+private def pushVarU64 (buf : ByteArray) (v0 : UInt64) : ByteArray :=
+  Id.run do
+    let mut out := buf
+    let mut v := v0
+    for _ in [:10] do
+      let lo : UInt8 := UInt8.ofNat (v.toNat &&& 0x7F)
+      v := v >>> 7
+      if v == 0 then
+        out := out.push lo
+        return out
+      out := out.push (lo ||| 0x80)
+    return out
+
+private def pushVarU32 (buf : ByteArray) (v : Nat) : ByteArray :=
+  pushVarU64 buf (UInt64.ofNat v)
+
+private def flwaWordTag (v : UInt64) : Nat :=
+  if v == 0 then 0
+  else if v ≤ 0xFF then 1
+  else if v ≤ 0xFFFFFFFF then 2
+  else 3
+
+private def pushTaggedU64 (buf : ByteArray) (v : UInt64) (tag : Nat) : ByteArray :=
+  match tag with
+  | 0 => buf
+  | 1 => buf.push (UInt8.ofNat (v.toNat &&& 0xFF))
+  | 2 => Flow.pushLE32 buf (UInt32.ofNat (v.toNat &&& 0xFFFFFFFF))
+  | _ => Flow.pushLE64 buf v
+
+private def cellWords (c : Flow.Cell64) : List UInt64 :=
+  [c.w0, c.w1, c.w2, c.w3, c.w4, c.w5, c.w6, c.w7]
+
+def packArenaCellsFlwa (cells : Array Flow.Cell64) : Option ByteArray := do
+  if cells.size == 0 || cells.size > 65536 then
+    none
+  let mut body := ByteArray.empty
+  let mut nzCells : Nat := 0
+  let mut nextExpected : Nat := 0
+  for idx in [:cells.size] do
+    let words := cellWords (cells[idx]!)
+    let mut desc : Nat := 0
+    for wIdx in [:8] do
+      let w := words[wIdx]!
+      desc := desc ||| ((flwaWordTag w) <<< (wIdx * 2))
+    if desc == 0 then
+      continue
+    let delta := idx - nextExpected
+    body := pushVarU32 body delta
+    body := Flow.pushLE16 body (UInt16.ofNat desc)
+    for wIdx in [:8] do
+      let w := words[wIdx]!
+      let tag := (desc >>> (wIdx * 2)) &&& 3
+      body := pushTaggedU64 body w tag
+    nextExpected := idx + 1
+    nzCells := nzCells + 1
+  let mut hdr := ByteArray.empty
+  hdr := Flow.pushLE32 hdr 0x41574C46 -- "FLWA"
+  hdr := Flow.pushLE32 hdr 1
+  hdr := Flow.pushLE32 hdr (UInt32.ofNat cells.size)
+  hdr := Flow.pushLE32 hdr (UInt32.ofNat nzCells)
+  let fullBody := hdr ++ body
+  let trailer := Flow.fnv1a64Bytes fullBody
+  return Flow.pushLE64 fullBody trailer
 
 def goldenCases : List GoldenCase :=
   [ { name := "case1_hearsay"
@@ -423,24 +495,88 @@ def emitSchemaTo (outPath : System.FilePath) : IO Unit := do
   if !ok then
     throw <| IO.userError s!"[SOUND] Schema ABI emission/verification failed for {outPath}"
 
+private def truncAscii23 (s : String) : ByteArray :=
+  let raw := s.toUTF8
+  let takeN := min raw.size 23
+  raw.extract 0 takeN
+
+def encodeFir2 (g : Flow.Morphism.Graph) : Option ByteArray := do
+  if !g.wf then none
+  let lutTotal : Nat := g.ops.foldl (fun acc op => acc + op.lutWords.length) 0
+  if lutTotal > 4096 then
+    none
+  let modName := truncAscii23 g.name
+  if modName.size == 0 then
+    none
+  let multByte : UInt8 := match g.mult with | .linear => 0 | .cartesian => 1
+  let flags : Nat := if g.cleanAnc then 1 else 0
+  let mut buf := ByteArray.empty
+  buf := Flow.pushLE32 buf 0x32524946 -- "FIR2"
+  buf := buf.push 2
+  buf := buf.push multByte
+  buf := pushVarU32 buf flags
+  buf := pushVarU32 buf g.inputs.length
+  buf := pushVarU32 buf g.outputs.length
+  buf := pushVarU32 buf g.ops.length
+  buf := pushVarU32 buf lutTotal
+  buf := buf.push (UInt8.ofNat modName.size)
+  buf := buf ++ modName
+  let mut prevW : Nat := 1
+  for v in g.vals do
+    let vn := truncAscii23 v.name
+    let sameW : Nat := if v.width == prevW then 1 else 0
+    let isCl : Nat := if v.isClassical then 1 else 0
+    let vtag : UInt8 := UInt8.ofNat (isCl ||| (sameW <<< 1) ||| (vn.size <<< 2))
+    buf := buf.push vtag
+    if sameW == 0 then
+      buf := pushVarU32 buf v.width
+      prevW := v.width
+    buf := buf ++ vn
+  for oid in g.outputs do
+    buf := pushVarU32 buf oid
+  for op in g.ops do
+    let ka : UInt8 := UInt8.ofNat ((op.kind.code.toNat &&& 0x1F) ||| ((op.ins.length &&& 0x07) <<< 5))
+    let pmask : UInt8 := UInt8.ofNat (
+      (if op.lutWords.isEmpty then 0 else 1) |||
+      (if op.p0 != 0 then 2 else 0) |||
+      (if op.p1 != 0 then 4 else 0) |||
+      (if op.p2 != 0 then 8 else 0) |||
+      (if op.p3 != 0 then 16 else 0))
+    buf := (buf.push ka).push pmask
+    for iv in op.ins do
+      buf := pushVarU32 buf ((op.outVal - 1) - iv)
+    if !op.lutWords.isEmpty then
+      buf := pushVarU32 buf op.lutWords.length
+    if op.p0 != 0 then
+      buf := pushVarU64 buf op.p0
+    if op.p1 != 0 then
+      buf := pushVarU64 buf op.p1
+    if op.p2 != 0 then
+      buf := pushVarU64 buf op.p2
+    if op.p3 != 0 then
+      buf := pushVarU64 buf op.p3
+  for op in g.ops do
+    for lw in op.lutWords do
+      buf := pushVarU64 buf lw
+  let h := Flow.fnv1a64Bytes buf
+  return Flow.pushLE64 buf h
+
 def emitGoldenDir (dir : System.FilePath) : IO Unit := do
   IO.FS.createDirAll dir
   let mut manifestRows : List String := []
   for gc in goldenCases do
-    let some bin := buildSealedArenaBytes gc.nodes gc.slots
-      | throw <| IO.userError s!"[SOUND] pack {gc.name} failed"
-    if bin.size != arenaBytes then
-      throw <| IO.userError s!"[SOUND] {gc.name} size {bin.size} != {arenaBytes}"
+    let some cells := buildSealedArenaCells gc.nodes gc.slots
+      | throw <| IO.userError s!"[SOUND] build cells {gc.name} failed"
+    let some binFlwa := packArenaCellsFlwa cells
+      | throw <| IO.userError s!"[SOUND] pack FLWA {gc.name} failed"
     let bNodes := gc.nodes.map toBilatticeNode
     let (nm, iStar, pStar, est, defM, conf, pen) := Sound.Bilattice.statusMasks leafThreshold bNodes
     let mutMask := gc.slots.powerMask &&& (~~~gc.slots.immunityMask)
     let rescMask := gc.slots.rescissionPowerMask &&& (~~~gc.slots.immunityMask)
-    let some expFir := Flow.Morphism.encodeFir (buildAuthorityFir gc.name mutMask est rescMask)
-      | throw <| IO.userError s!"[SOUND] encodeFir {gc.name} failed"
-    if expFir.size != 2144 then
-      throw <| IO.userError s!"[SOUND] {gc.name} FIR1 size {expFir.size} != 2144"
-    IO.FS.writeBinFile (dir / s!"{gc.name}.snd") bin
-    IO.FS.writeBinFile (dir / s!"{gc.name}.fir") expFir
+    let some expFir2 := encodeFir2 (buildAuthorityFir gc.name mutMask est rescMask)
+      | throw <| IO.userError s!"[SOUND] encodeFir2 {gc.name} failed"
+    IO.FS.writeBinFile (dir / s!"{gc.name}.flwa") binFlwa
+    IO.FS.writeBinFile (dir / s!"{gc.name}.fir2") expFir2
     let row :=
       "  {\n" ++
       s!"    \"name\": \"{gc.name}\",\n" ++

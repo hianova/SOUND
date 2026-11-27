@@ -1,4 +1,5 @@
 #include "flow_ir.h"
+#include "flow_wire_pack.h"
 #include "sound.h"
 #include "sound_cert.h"
 
@@ -630,6 +631,29 @@ static uint32_t sound_test_t4_arena_merkle(void) {
         fails++;
     }
 
+    /* "FLWA" sparse 64B arena pack <-> unpack bit-exact roundtrip + tamper rejection */
+    static uint8_t flwa_buf[18432];
+    static uint8_t raw_rt[SOUND_ARENA_BYTES];
+    size_t flwa_len = 0U;
+    size_t rt_len = 0U;
+    if (!flow_arena_pack_bytes(wire, SOUND_ARENA_BYTES, flwa_buf, sizeof(flwa_buf), &flwa_len) ||
+        flwa_len >= SOUND_ARENA_BYTES ||
+        !flow_arena_unpack_bytes(flwa_buf, flwa_len, raw_rt, sizeof(raw_rt), &rt_len) ||
+        rt_len != SOUND_ARENA_BYTES) {
+        fails++;
+    } else {
+        for (size_t i = 0U; i < SOUND_ARENA_BYTES; i++) {
+            if (raw_rt[i] != wire[i]) {
+                fails++;
+                break;
+            }
+        }
+        flwa_buf[flwa_len - 1U] ^= UINT8_C(1);
+        if (flow_arena_unpack_bytes(flwa_buf, flwa_len, raw_rt, sizeof(raw_rt), &rt_len)) {
+            fails++;
+        }
+    }
+
     return fails;
 }
 
@@ -850,6 +874,16 @@ static uint32_t sound_test_t7_fir_lift(void) {
         uint64_t outv[4] = {0};
         if (!flow_ir_eval_u64(&prog, inv, outv) ||
             outv[3] != arena.map.searu_repair.candidate_mask) {
+            fails++;
+        }
+        static uint8_t fir2_buf[SOUND_FIR_BYTES];
+        size_t fir2_len = 0U;
+        flow_ir_prog_t prog2;
+        uint64_t outv2[4] = {0};
+        if (!flow_ir_encode_packed_bytes(&prog, fir2_buf, sizeof(fir2_buf), &fir2_len) ||
+            fir2_len >= fir_len || !flow_ir_load_bytes(&prog2, fir2_buf, fir2_len) ||
+            !flow_ir_validate(&prog2) || !flow_ir_admits_unitary(&prog2) ||
+            !flow_ir_eval_u64(&prog2, inv, outv2) || outv2[3] != outv[3]) {
             fails++;
         }
     }
@@ -1177,6 +1211,29 @@ static uint32_t sound_test_t10_policy_eval_fir_lift(void) {
             outv[2] != sim.map.eval_out.conflict_mask ||
             outv[3] != sim.map.eval_out.penumbra_mask) {
             fails++;
+        }
+    }
+    {
+        static uint8_t fir2_buf[65536];
+        size_t fir2_len = 0U;
+        static flow_ir_prog_t prog2;
+        if (!flow_ir_encode_packed_bytes(&prog, fir2_buf, sizeof(fir2_buf), &fir2_len) ||
+            fir2_len >= fir_len || !flow_ir_load_bytes(&prog2, fir2_buf, fir2_len) ||
+            !flow_ir_admits_unitary(&prog2)) {
+            fails++;
+        } else {
+            uint64_t inv[4] = {UINT64_C(0x6), UINT64_C(0), UINT64_C(0), UINT64_C(0)};
+            uint64_t out1[4] = {0};
+            uint64_t out2[4] = {0};
+            if (!flow_ir_eval_u64(&prog, inv, out1) || !flow_ir_eval_u64(&prog2, inv, out2) ||
+                out1[0] != out2[0] || out1[1] != out2[1] || out1[2] != out2[2] ||
+                out1[3] != out2[3]) {
+                fails++;
+            }
+            fir2_buf[fir2_len - 1U] ^= UINT8_C(1);
+            if (flow_ir_load_bytes(&prog2, fir2_buf, fir2_len)) {
+                fails++;
+            }
         }
     }
     return fails;
@@ -1597,27 +1654,182 @@ static uint32_t sound_test_t20_compositional_loophole(void) {
     return fails;
 }
 
+static uint32_t sound_test_t21_packed_wire_roundtrip(void) {
+    uint32_t fails = UINT32_C(0);
+    static sound_contract_spec_t spec_in, spec_out;
+    static sound_contract_audit_t audit_in, audit_out;
+    static uint8_t pkt[SOUND_CERT_MAX_BYTES];
+    size_t pkt_len = 0U;
+
+    /* 1. Contract spec & contract cert "SNDC" pack/unpack bit-exact roundtrip */
+    sound_hunt_contract_loophole(UINT64_C(0x42), &spec_in, &audit_in);
+    if (!sound_cert_emit_contract_fir(&audit_in, NULL, &g_cert_ws) || !g_cert_ws.ir_eval_ok) {
+        return UINT32_C(1);
+    }
+    if (!sound_cert_pack_contract_spec(&spec_in, pkt, sizeof(pkt), &pkt_len) ||
+        !sound_cert_unpack_contract_spec(pkt, pkt_len, &spec_out)) {
+        fails++;
+    } else {
+        const uint8_t *pa = (const uint8_t *)&spec_in;
+        const uint8_t *pb = (const uint8_t *)&spec_out;
+        for (size_t i = 0U; i < sizeof(spec_in); i++) {
+            if (pa[i] != pb[i]) {
+                fails++;
+                break;
+            }
+        }
+        pkt[pkt_len - 1U] ^= UINT8_C(1);
+        if (sound_cert_unpack_contract_spec(pkt, pkt_len, &spec_out)) {
+            fails++;
+        }
+    }
+
+    if (!sound_cert_pack_contract_cert(&spec_in, &audit_in, &g_cert_ws, pkt, sizeof(pkt),
+                                       &pkt_len)) {
+        fails++;
+    } else {
+        size_t fbytes = 0U;
+        bool feval = false;
+        if (!sound_cert_unpack_contract_cert(pkt, pkt_len, &spec_out, &audit_out, &fbytes,
+                                             &feval) ||
+            fbytes != g_cert_ws.wire_len || feval != g_cert_ws.ir_eval_ok ||
+            audit_out.certified != audit_in.certified ||
+            audit_out.viol_flags != audit_in.viol_flags ||
+            audit_out.benefit_drift != audit_in.benefit_drift ||
+            audit_out.merkle != audit_in.merkle) {
+            fails++;
+        }
+        pkt[pkt_len - 1U] ^= UINT8_C(1);
+        if (sound_cert_unpack_contract_cert(pkt, pkt_len, &spec_out, &audit_out, &fbytes, &feval)) {
+            fails++;
+        }
+    }
+
+    /* 2. All 6 witness hunt modes "SNDC" + "FIR2" roundtrip */
+    {
+        sound_paradox_witness_t w_in, w_out;
+        sound_hunt_paradox_min(UINT64_C(0x1337), &w_in);
+        if (!sound_cert_emit_paradox_fir(&w_in, NULL, &g_cert_ws) ||
+            !sound_cert_pack_hunt_witness(SOUND_HUNT_MODE_PARADOX_MIN, &w_in, &g_cert_ws, pkt,
+                                          sizeof(pkt), &pkt_len) ||
+            !sound_cert_unpack_hunt_witness(pkt, pkt_len, NULL, &w_out, sizeof(w_out), NULL,
+                                            NULL) ||
+            w_out.merkle != w_in.merkle || w_out.atk_to[0] != w_in.atk_to[0]) {
+            fails++;
+        }
+    }
+    {
+        sound_sheaf_witness_t w_in, w_out;
+        sound_hunt_sheaf_h1(UINT64_C(0x1337), &w_in);
+        if (!sound_cert_emit_sheaf_fir(&w_in, NULL, &g_cert_ws) ||
+            !sound_cert_pack_hunt_witness(SOUND_HUNT_MODE_SHEAF_H1, &w_in, &g_cert_ws, pkt,
+                                          sizeof(pkt), &pkt_len) ||
+            !sound_cert_unpack_hunt_witness(pkt, pkt_len, NULL, &w_out, sizeof(w_out), NULL,
+                                            NULL) ||
+            w_out.merkle != w_in.merkle || w_out.xor_holonomy != w_in.xor_holonomy) {
+            fails++;
+        }
+    }
+    {
+        sound_chisholm_witness_t w_in, w_out;
+        sound_hunt_chisholm(&w_in);
+        if (!sound_cert_emit_chisholm_fir(NULL, &g_cert_ws) ||
+            !sound_cert_pack_hunt_witness(SOUND_HUNT_MODE_CHISHOLM, &w_in, &g_cert_ws, pkt,
+                                          sizeof(pkt), &pkt_len) ||
+            !sound_cert_unpack_hunt_witness(pkt, pkt_len, NULL, &w_out, sizeof(w_out), NULL,
+                                            NULL) ||
+            w_out.merkle != w_in.merkle || w_out.established_mask != w_in.established_mask) {
+            fails++;
+        }
+    }
+    {
+        sound_norm_trap_witness_t w_in, w_out;
+        sound_hunt_norm_trap(UINT64_C(0x77), &w_in);
+        if (!sound_cert_emit_norm_trap_fir(&w_in, NULL, &g_cert_ws) ||
+            !sound_cert_pack_hunt_witness(SOUND_HUNT_MODE_NORM_TRAP, &w_in, &g_cert_ws, pkt,
+                                          sizeof(pkt), &pkt_len) ||
+            !sound_cert_unpack_hunt_witness(pkt, pkt_len, NULL, &w_out, sizeof(w_out), NULL,
+                                            NULL) ||
+            w_out.merkle != w_in.merkle || w_out.final_pos != w_in.final_pos) {
+            fails++;
+        }
+    }
+    {
+        sound_aspect_witness_t w_in, w_out;
+        sound_hunt_aspect_firewall(UINT64_C(0x42), &w_in);
+        if (!sound_cert_emit_aspect_fir(NULL, &g_cert_ws) ||
+            !sound_cert_pack_hunt_witness(SOUND_HUNT_MODE_ASPECT_FIREWALL, &w_in, &g_cert_ws, pkt,
+                                          sizeof(pkt), &pkt_len) ||
+            !sound_cert_unpack_hunt_witness(pkt, pkt_len, NULL, &w_out, sizeof(w_out), NULL,
+                                            NULL) ||
+            w_out.merkle != w_in.merkle || w_out.j_end != w_in.j_end) {
+            fails++;
+        }
+    }
+    {
+        sound_presup_witness_t w_in, w_out;
+        sound_hunt_presup_filter(UINT64_C(0x55), &w_in);
+        if (!sound_cert_emit_presup_fir(NULL, &g_cert_ws) ||
+            !sound_cert_pack_hunt_witness(SOUND_HUNT_MODE_PRESUP_FILTER, &w_in, &g_cert_ws, pkt,
+                                          sizeof(pkt), &pkt_len) ||
+            !sound_cert_unpack_hunt_witness(pkt, pkt_len, NULL, &w_out, sizeof(w_out), NULL,
+                                            NULL) ||
+            w_out.merkle != w_in.merkle || w_out.cond_false_presup != w_in.cond_false_presup) {
+            fails++;
+        }
+    }
+    return fails;
+}
+
 /* ============================================================================
  * File I/O & CLI Commands
  * ============================================================================ */
 
-static bool sound_load_arena_file(const char *path, SoundArena *arena) {
-    static uint8_t raw[SOUND_ARENA_BYTES + 1U];
+static bool sound_read_bin_file_buf(const char *path, uint8_t *buf, size_t cap, size_t *out_len) {
+    if (path == NULL || buf == NULL || out_len == NULL || cap == 0U) {
+        return false;
+    }
     FILE *fp = fopen(path, "rb");
     if (fp == NULL) {
         return false;
     }
     size_t total = 0U;
-    while (total < sizeof(raw)) {
-        size_t got = fread(raw + total, 1U, sizeof(raw) - total, fp);
+    while (total < cap) {
+        size_t got = fread(buf + total, 1U, cap - total, fp);
         total += got;
         if (got == 0U || feof(fp) != 0 || ferror(fp) != 0) {
             break;
         }
     }
+    int extra = fgetc(fp);
     int err = ferror(fp);
     fclose(fp);
-    if (err != 0 || total != SOUND_ARENA_BYTES) {
+    if (err != 0 || extra != EOF) {
+        return false;
+    }
+    *out_len = total;
+    return true;
+}
+
+static bool sound_load_arena_file(const char *path, SoundArena *arena) {
+    static uint8_t wire[18432];
+    static uint8_t raw[SOUND_ARENA_BYTES];
+    size_t total = 0U;
+    if (!sound_read_bin_file_buf(path, wire, sizeof(wire), &total)) {
+        return false;
+    }
+    if (total >= (size_t)FLOW_ARENA_PACK_HDR_B + 8U &&
+        flow_ir_wire_read_le32(wire) == FLOW_ARENA_PACK_MAGIC) {
+        size_t raw_len = 0U;
+        if (!flow_arena_unpack_bytes(wire, total, raw, sizeof(raw), &raw_len) ||
+            raw_len != SOUND_ARENA_BYTES) {
+            return false;
+        }
+    } else if (total == SOUND_ARENA_BYTES) {
+        for (size_t i = 0U; i < SOUND_ARENA_BYTES; i++) {
+            raw[i] = wire[i];
+        }
+    } else {
         return false;
     }
     for (size_t i = 0U; i < SOUND_ARENA_CELLS; i++) {
@@ -1635,6 +1847,44 @@ static bool sound_save_bin_file(const char *path, const uint8_t *buf, size_t len
     int err = ferror(fp);
     int cls = fclose(fp);
     return (err == 0) && (cls == 0) && (wr == len);
+}
+
+static bool sound_save_packed_arena_file(const char *path, const SoundArena *arena,
+                                         size_t *out_len) {
+    static uint8_t raw[SOUND_ARENA_BYTES];
+    static uint8_t packed[18432];
+    static uint8_t check[SOUND_ARENA_BYTES];
+    if (path == NULL || arena == NULL) {
+        return false;
+    }
+    for (size_t i = 0U; i < SOUND_ARENA_CELLS; i++) {
+        flow_cell_to_bytes(arena->cells[i].u64, raw + (i * 64U));
+    }
+    size_t plen = 0U;
+    size_t clen = 0U;
+    if (!flow_arena_pack_bytes(raw, sizeof(raw), packed, sizeof(packed), &plen) ||
+        !flow_arena_unpack_bytes(packed, plen, check, sizeof(check), &clen) ||
+        clen != sizeof(raw) || !sound_cert_bytes_equal(raw, check, sizeof(raw))) {
+        return false;
+    }
+    if (!sound_save_bin_file(path, packed, plen)) {
+        return false;
+    }
+    if (out_len != NULL) {
+        *out_len = plen;
+    }
+    return true;
+}
+
+static bool sound_save_raw_arena_file(const char *path, const SoundArena *arena) {
+    static uint8_t raw[SOUND_ARENA_BYTES];
+    if (path == NULL || arena == NULL) {
+        return false;
+    }
+    for (size_t i = 0U; i < SOUND_ARENA_CELLS; i++) {
+        flow_cell_to_bytes(arena->cells[i].u64, raw + (i * 64U));
+    }
+    return sound_save_bin_file(path, raw, sizeof(raw));
 }
 
 static void sound_derive_prog_name(char dst[24], const char *path) {
@@ -1658,6 +1908,9 @@ static void sound_derive_prog_name(char dst[24], const char *path) {
     if (len > 4U && base[len - 4U] == '.' && base[len - 3U] == 's' && base[len - 2U] == 'n' &&
         base[len - 1U] == 'd') {
         len -= 4U;
+    } else if (len > 5U && base[len - 5U] == '.' && base[len - 4U] == 'f' &&
+               base[len - 3U] == 'l' && base[len - 2U] == 'w' && base[len - 1U] == 'a') {
+        len -= 5U;
     }
     size_t out_i = 0U;
     while (out_i < 23U && out_i < len) {
@@ -1676,7 +1929,7 @@ static void sound_derive_prog_name(char dst[24], const char *path) {
 static SoundArena g_cli_arena;
 
 static int sound_cmd_selftest(void) {
-    uint32_t f[20];
+    uint32_t f[21];
     f[0] = sound_test_t1_kernel();
     f[1] = sound_test_t2_hohfeld_and_rollback();
     f[2] = sound_test_t3_frontend_gate();
@@ -1697,21 +1950,22 @@ static int sound_cmd_selftest(void) {
     f[17] = sound_test_t18_projection_and_forces();
     f[18] = sound_test_t19_contract_drift();
     f[19] = sound_test_t20_compositional_loophole();
+    f[20] = sound_test_t21_packed_wire_roundtrip();
 
     uint32_t tot = UINT32_C(0);
-    for (uint32_t i = 0U; i < 20U; i++) {
+    for (uint32_t i = 0U; i < 21U; i++) {
         tot += f[i];
     }
-    printf("[selftest] T1..T10(kernel)=%s T11(bilat)=%s T12(paradox)=%s T13(sheaf_cls)=%s "
-           "T14(sheaf_h1)=%s T15(hohfeld_v4)=%s T16(chisholm_trap)=%s T17(aspect)=%s "
-           "T18(presup_force)=%s T19(contract)=%s T20(loophole)=%s | fails=%u\n",
-           (f[0] + f[1] + f[2] + f[3] + f[4] + f[5] + f[6] + f[7] + f[8] + f[9]) == 0U ? "PASS"
-                                                                                       : "FAIL",
-           f[10] == 0U ? "PASS" : "FAIL", f[11] == 0U ? "PASS" : "FAIL",
-           f[12] == 0U ? "PASS" : "FAIL", f[13] == 0U ? "PASS" : "FAIL",
-           f[14] == 0U ? "PASS" : "FAIL", f[15] == 0U ? "PASS" : "FAIL",
-           f[16] == 0U ? "PASS" : "FAIL", f[17] == 0U ? "PASS" : "FAIL",
-           f[18] == 0U ? "PASS" : "FAIL", f[19] == 0U ? "PASS" : "FAIL", tot);
+    printf(
+        "[selftest] T1..T10(kernel)=%s T11(bilat)=%s T12(paradox)=%s T13(sheaf_cls)=%s "
+        "T14(sheaf_h1)=%s T15(hohfeld_v4)=%s T16(chisholm_trap)=%s T17(aspect)=%s "
+        "T18(presup_force)=%s T19(contract)=%s T20(loophole)=%s T21(wire_pack)=%s | fails=%u\n",
+        (f[0] + f[1] + f[2] + f[3] + f[4] + f[5] + f[6] + f[7] + f[8] + f[9]) == 0U ? "PASS"
+                                                                                    : "FAIL",
+        f[10] == 0U ? "PASS" : "FAIL", f[11] == 0U ? "PASS" : "FAIL", f[12] == 0U ? "PASS" : "FAIL",
+        f[13] == 0U ? "PASS" : "FAIL", f[14] == 0U ? "PASS" : "FAIL", f[15] == 0U ? "PASS" : "FAIL",
+        f[16] == 0U ? "PASS" : "FAIL", f[17] == 0U ? "PASS" : "FAIL", f[18] == 0U ? "PASS" : "FAIL",
+        f[19] == 0U ? "PASS" : "FAIL", f[20] == 0U ? "PASS" : "FAIL", tot);
     return (tot == 0U) ? 0 : 1;
 }
 
@@ -1807,20 +2061,27 @@ static int sound_cmd_lift_fir(int argc, char **argv) {
     const char *in_path = argv[2];
     const char *out_path = argv[3];
     bool use_repaired = false;
+    bool raw_fir = false;
     uint64_t seed = UINT64_C(0x53454152555F3031);
-    if (argc >= 5) {
-        if (!sound_cstr_eq(argv[4], "--repaired")) {
-            fprintf(stderr, "ERROR: unknown option '%s'\n", argv[4]);
-            return 1;
-        }
-        use_repaired = true;
-        if (argc >= 6 && !sound_parse_u64(argv[5], &seed)) {
-            fprintf(stderr, "ERROR: invalid seed '%s'\n", argv[5]);
+    for (int i = 4; i < argc; i++) {
+        if (sound_cstr_eq(argv[i], "--repaired")) {
+            use_repaired = true;
+            if (i + 1 < argc && argv[i + 1][0] != '-') {
+                if (!sound_parse_u64(argv[i + 1], &seed)) {
+                    fprintf(stderr, "ERROR: invalid seed '%s'\n", argv[i + 1]);
+                    return 1;
+                }
+                i++;
+            }
+        } else if (sound_cstr_eq(argv[i], "--raw-fir")) {
+            raw_fir = true;
+        } else {
+            fprintf(stderr, "ERROR: unknown option '%s'\n", argv[i]);
             return 1;
         }
     }
     if (!sound_load_arena_file(in_path, &g_cli_arena)) {
-        fprintf(stderr, "ERROR: unable to read 16,384B SoundArena '%s'\n", in_path);
+        fprintf(stderr, "ERROR: unable to read SoundArena (.flwa/.snd) '%s'\n", in_path);
         return 1;
     }
     sound_fiber_t rc = sound_arena_verify(&g_cli_arena);
@@ -1851,28 +2112,54 @@ static int sound_cmd_lift_fir(int argc, char **argv) {
 
     flow_ir_prog_t prog;
     flow_ir_dag_stats_t dag;
-    if (!flow_ir_load_bytes(&prog, fir_buf, fir_len) || !flow_ir_validate(&prog) ||
-        !flow_ir_admits_unitary(&prog) || !flow_ir_analyze_dag(&prog, &dag)) {
-        fprintf(stderr, "ERROR: lifted FIR1 failed FLOW_IR unitary/DAG audit\n");
+    if (!flow_ir_load_bytes(&prog, fir_buf, fir_len)) {
+        fprintf(stderr, "ERROR: lifted FIR1 failed decode\n");
         return 1;
     }
-    if (!sound_save_bin_file(out_path, fir_buf, fir_len)) {
+    uint8_t out_wire[SOUND_FIR_BYTES];
+    size_t out_len = 0U;
+    if (raw_fir) {
+        for (size_t i = 0U; i < fir_len; i++) {
+            out_wire[i] = fir_buf[i];
+        }
+        out_len = fir_len;
+    } else {
+        if (!flow_ir_encode_packed_bytes(&prog, out_wire, sizeof(out_wire), &out_len) ||
+            !flow_ir_load_bytes(&prog, out_wire, out_len)) {
+            fprintf(stderr, "ERROR: FIR2 pack/reload roundtrip failed\n");
+            return 1;
+        }
+    }
+    if (!flow_ir_validate(&prog) || !flow_ir_admits_unitary(&prog) ||
+        !flow_ir_analyze_dag(&prog, &dag)) {
+        fprintf(stderr, "ERROR: lifted %s failed FLOW_IR unitary/DAG audit\n",
+                raw_fir ? "FIR1" : "FIR2");
+        return 1;
+    }
+    if (!sound_save_bin_file(out_path, out_wire, out_len)) {
         fprintf(stderr, "ERROR: unable to write '%s'\n", out_path);
         return 1;
     }
 
     uint64_t active_mask = use_repaired ? g_cli_arena.map.searu_repair.candidate_mask
                                         : g_cli_arena.map.eval_out.established_mask;
-    printf(
-        "[lift-fir] %s -> %s (%zuB, name=%s, active=0x%016llx) | mult_bits=%u mult_depth=%u unitary=OK\n",
-        in_path, out_path, fir_len, prog.name, (unsigned long long)active_mask, dag.mult_bits,
-        dag.mult_depth);
+    printf("[lift-fir] %s -> %s (%s %zuB, raw=%zuB, name=%s, active=0x%016llx) | mult_bits=%u "
+           "mult_depth=%u unitary=OK\n",
+           in_path, out_path, raw_fir ? "FIR1" : "FIR2", out_len, fir_len, prog.name,
+           (unsigned long long)active_mask, dag.mult_bits, dag.mult_depth);
     return 0;
 }
 
-static int sound_cmd_lift_policy_fir(const char *in_path, const char *out_path) {
+static int sound_cmd_lift_policy_fir(int argc, char **argv) {
+    const char *in_path = argv[2];
+    const char *out_path = argv[3];
+    bool raw_fir = (argc >= 5 && sound_cstr_eq(argv[4], "--raw-fir"));
+    if (argc >= 5 && !raw_fir) {
+        fprintf(stderr, "ERROR: unknown option '%s'\n", argv[4]);
+        return 1;
+    }
     if (!sound_load_arena_file(in_path, &g_cli_arena)) {
-        fprintf(stderr, "ERROR: unable to read 16,384B SoundArena '%s'\n", in_path);
+        fprintf(stderr, "ERROR: unable to read SoundArena (.flwa/.snd) '%s'\n", in_path);
         return 1;
     }
     sound_fiber_t rc = sound_arena_verify(&g_cli_arena);
@@ -1884,6 +2171,7 @@ static int sound_cmd_lift_policy_fir(const char *in_path, const char *out_path) 
     char prog_name[24];
     sound_derive_prog_name(prog_name, in_path);
     static uint8_t fir_buf[65536];
+    static uint8_t packed_buf[65536];
     size_t fir_len = 0U;
     rc = sound_lift_policy_eval_to_fir(&g_cli_arena, prog_name, 0U, fir_buf, sizeof(fir_buf),
                                        &fir_len);
@@ -1894,18 +2182,34 @@ static int sound_cmd_lift_policy_fir(const char *in_path, const char *out_path) 
     }
     static flow_ir_prog_t prog;
     flow_ir_dag_stats_t dag;
-    if (!flow_ir_load_bytes(&prog, fir_buf, fir_len) || !flow_ir_validate(&prog) ||
-        !flow_ir_admits_unitary(&prog) || !flow_ir_analyze_dag(&prog, &dag)) {
-        fprintf(stderr, "ERROR: lifted policy FIR1 failed FLOW_IR unitary/DAG audit\n");
+    if (!flow_ir_load_bytes(&prog, fir_buf, fir_len)) {
+        fprintf(stderr, "ERROR: lifted policy FIR1 failed decode\n");
         return 1;
     }
-    if (!sound_save_bin_file(out_path, fir_buf, fir_len)) {
+    const uint8_t *out_ptr = fir_buf;
+    size_t out_len = fir_len;
+    if (!raw_fir) {
+        if (!flow_ir_encode_packed_bytes(&prog, packed_buf, sizeof(packed_buf), &out_len) ||
+            !flow_ir_load_bytes(&prog, packed_buf, out_len)) {
+            fprintf(stderr, "ERROR: policy FIR2 pack/reload roundtrip failed\n");
+            return 1;
+        }
+        out_ptr = packed_buf;
+    }
+    if (!flow_ir_validate(&prog) || !flow_ir_admits_unitary(&prog) ||
+        !flow_ir_analyze_dag(&prog, &dag)) {
+        fprintf(stderr, "ERROR: lifted policy %s failed FLOW_IR unitary/DAG audit\n",
+                raw_fir ? "FIR1" : "FIR2");
+        return 1;
+    }
+    if (!sound_save_bin_file(out_path, out_ptr, out_len)) {
         fprintf(stderr, "ERROR: unable to write '%s'\n", out_path);
         return 1;
     }
-    printf(
-        "[lift-policy-fir] %s -> %s (%zuB, name=%s, ops=%u) | mult_bits=%u mult_depth=%u unitary=OK\n",
-        in_path, out_path, fir_len, prog.name, prog.num_ops, dag.mult_bits, dag.mult_depth);
+    printf("[lift-policy-fir] %s -> %s (%s %zuB, raw=%zuB, name=%s, ops=%u) | mult_bits=%u "
+           "mult_depth=%u unitary=OK\n",
+           in_path, out_path, raw_fir ? "FIR1" : "FIR2", out_len, fir_len, prog.name, prog.num_ops,
+           dag.mult_bits, dag.mult_depth);
     return 0;
 }
 
@@ -2031,6 +2335,7 @@ static int sound_cmd_hunt(int argc, char **argv) {
     const char *out_lean = sound_parse_opt(argc, argv, 3, "--out-lean");
     const char *out_fir = sound_parse_opt(argc, argv, 3, "--out-fir");
     const char *out_json = sound_parse_opt(argc, argv, 3, "--out-json");
+    const char *out_cert = sound_parse_opt(argc, argv, 3, "--out-cert");
     uint64_t seed = UINT64_C(0x534F554E445F3330);
     if (seed_str != NULL && !sound_parse_u64(seed_str, &seed)) {
         fprintf(stderr, "ERROR: invalid seed '%s'\n", seed_str);
@@ -2049,7 +2354,11 @@ static int sound_cmd_hunt(int argc, char **argv) {
         if (out_json != NULL && !sound_cert_emit_paradox_json(&w, &g_cert_ws, out_json)) {
             return 1;
         }
-        printf("[hunt paradox-min] models=%u conf=0x%x merkle=0x%016llx fir=%zuB\n",
+        if (out_cert != NULL && !sound_cert_emit_hunt_cert_file(SOUND_HUNT_MODE_PARADOX_MIN, &w,
+                                                                &g_cert_ws, out_cert)) {
+            return 1;
+        }
+        printf("[hunt paradox-min] models=%u conf=0x%x merkle=0x%016llx fir2=%zuB\n",
                w.classical_models, (unsigned)w.conflict_mask, (unsigned long long)w.merkle,
                g_cert_ws.wire_len);
         return 0;
@@ -2066,7 +2375,11 @@ static int sound_cmd_hunt(int argc, char **argv) {
         if (out_json != NULL && !sound_cert_emit_sheaf_json(&w, &g_cert_ws, out_json)) {
             return 1;
         }
-        printf("[hunt sheaf-h1] hol_z4=%u cob=%u xor_hol=0x%016llx merkle=0x%016llx fir=%zuB\n",
+        if (out_cert != NULL &&
+            !sound_cert_emit_hunt_cert_file(SOUND_HUNT_MODE_SHEAF_H1, &w, &g_cert_ws, out_cert)) {
+            return 1;
+        }
+        printf("[hunt sheaf-h1] hol_z4=%u cob=%u xor_hol=0x%016llx merkle=0x%016llx fir2=%zuB\n",
                (unsigned)w.holonomy_z4, (unsigned)w.is_coboundary_z4,
                (unsigned long long)w.xor_holonomy, (unsigned long long)w.merkle,
                g_cert_ws.wire_len);
@@ -2084,7 +2397,11 @@ static int sound_cmd_hunt(int argc, char **argv) {
         if (out_json != NULL && !sound_cert_emit_chisholm_json(&w, &g_cert_ws, out_json)) {
             return 1;
         }
-        printf("[hunt chisholm] est=0x%llx def=0x%llx conf=0x%llx merkle=0x%016llx fir=%zuB\n",
+        if (out_cert != NULL &&
+            !sound_cert_emit_hunt_cert_file(SOUND_HUNT_MODE_CHISHOLM, &w, &g_cert_ws, out_cert)) {
+            return 1;
+        }
+        printf("[hunt chisholm] est=0x%llx def=0x%llx conf=0x%llx merkle=0x%016llx fir2=%zuB\n",
                (unsigned long long)w.established_mask, (unsigned long long)w.defeated_mask,
                (unsigned long long)w.conflict_mask, (unsigned long long)w.merkle,
                g_cert_ws.wire_len);
@@ -2102,7 +2419,11 @@ static int sound_cmd_hunt(int argc, char **argv) {
         if (out_json != NULL && !sound_cert_emit_norm_trap_json(&w, &g_cert_ws, out_json)) {
             return 1;
         }
-        printf("[hunt norm-trap] freeze_ok=%u w=%u eA=%u eB=%u merkle=0x%016llx fir=%zuB\n",
+        if (out_cert != NULL &&
+            !sound_cert_emit_hunt_cert_file(SOUND_HUNT_MODE_NORM_TRAP, &w, &g_cert_ws, out_cert)) {
+            return 1;
+        }
+        printf("[hunt norm-trap] freeze_ok=%u w=%u eA=%u eB=%u merkle=0x%016llx fir2=%zuB\n",
                w.freeze_ok, (unsigned)w.tie_weight, w.energy_keep_a, w.energy_keep_b,
                (unsigned long long)w.merkle, g_cert_ws.wire_len);
         return 0;
@@ -2119,7 +2440,11 @@ static int sound_cmd_hunt(int argc, char **argv) {
         if (out_json != NULL && !sound_cert_emit_aspect_json(&w, &g_cert_ws, out_json)) {
             return 1;
         }
-        printf("[hunt aspect-firewall] bij=%u blocked=0x%x fiber=%u merkle=0x%016llx fir=%zuB\n",
+        if (out_cert != NULL && !sound_cert_emit_hunt_cert_file(SOUND_HUNT_MODE_ASPECT_FIREWALL, &w,
+                                                                &g_cert_ws, out_cert)) {
+            return 1;
+        }
+        printf("[hunt aspect-firewall] bij=%u blocked=0x%x fiber=%u merkle=0x%016llx fir2=%zuB\n",
                w.aspect_bijection_ok, w.telic_blocked_mask, w.declarative_atelic_fiber,
                (unsigned long long)w.merkle, g_cert_ws.wire_len);
         return 0;
@@ -2136,7 +2461,11 @@ static int sound_cmd_hunt(int argc, char **argv) {
         if (out_json != NULL && !sound_cert_emit_presup_json(&w, &g_cert_ws, out_json)) {
             return 1;
         }
-        printf("[hunt presup-filter] gap=(%u,%u) cond_f=%u cond_t=%u merkle=0x%016llx fir=%zuB\n",
+        if (out_cert != NULL && !sound_cert_emit_hunt_cert_file(SOUND_HUNT_MODE_PRESUP_FILTER, &w,
+                                                                &g_cert_ws, out_cert)) {
+            return 1;
+        }
+        printf("[hunt presup-filter] gap=(%u,%u) cond_f=%u cond_t=%u merkle=0x%016llx fir2=%zuB\n",
                (unsigned)w.eval_fail_b, (unsigned)w.eval_neg_fail_b, (unsigned)w.cond_false_presup,
                (unsigned)w.cond_true_presup, (unsigned long long)w.merkle, g_cert_ws.wire_len);
         return 0;
@@ -2155,8 +2484,12 @@ static int sound_cmd_hunt(int argc, char **argv) {
             !sound_cert_emit_contract_json(&spec, &audit, &g_cert_ws, out_json)) {
             return 1;
         }
+        if (out_cert != NULL &&
+            !sound_cert_emit_contract_cert_file(&spec, &audit, &g_cert_ws, out_cert)) {
+            return 1;
+        }
         printf("[hunt contract-drift] cert=%u drift=%lld pred=%u rep_cert=%u merkle=0x%016llx "
-               "fir=%zuB\n",
+               "fir2=%zuB\n",
                audit.certified, (long long)audit.benefit_drift, audit.num_predatory_clauses,
                audit.repaired_certified, (unsigned long long)audit.merkle, g_cert_ws.wire_len);
         return 0;
@@ -2175,12 +2508,15 @@ static int sound_cmd_hunt(int argc, char **argv) {
             !sound_cert_emit_contract_json(&spec, &audit, &g_cert_ws, out_json)) {
             return 1;
         }
+        if (out_cert != NULL &&
+            !sound_cert_emit_contract_cert_file(&spec, &audit, &g_cert_ws, out_cert)) {
+            return 1;
+        }
         printf("[hunt contract-loophole] cert=%u pred=%u edges=%u sheaf_h1=%u bypass=0x%x "
-               "drift=%lld rep_cert=%u merkle=0x%016llx fir=%zuB\n",
+               "drift=%lld rep_cert=%u fir2=%zuB\n",
                audit.certified, audit.num_predatory_clauses, spec.num_edges,
                audit.graph_sheaf_h1_obstructed, audit.graph_bypass_mask,
-               (long long)audit.benefit_drift, audit.repaired_certified,
-               (unsigned long long)audit.merkle, g_cert_ws.wire_len);
+               (long long)audit.benefit_drift, audit.repaired_certified, g_cert_ws.wire_len);
         return 0;
     }
     fprintf(stderr, "ERROR: unknown hunt mode '%s'\n", mode);
@@ -2620,22 +2956,127 @@ static bool sound_parse_contract_json_file(const char *path, sound_contract_spec
     return spec->num_clauses > UINT32_C(0);
 }
 
+static bool sound_parse_contract_file(const char *path, sound_contract_spec_t *spec) {
+    static uint8_t bin_buf[SOUND_CERT_MAX_BYTES];
+    size_t blen = 0U;
+    if (path != NULL && spec != NULL &&
+        sound_read_bin_file_buf(path, bin_buf, sizeof(bin_buf), &blen) && blen >= 16U &&
+        flow_ir_wire_read_le32(bin_buf) == SOUND_CERT_PACK_MAGIC) {
+        return sound_cert_unpack_contract_spec(bin_buf, blen, spec);
+    }
+    return sound_parse_contract_json_file(path, spec);
+}
+
+static const char *sound_clause_kind_json_str(uint8_t k) {
+    switch (k) {
+    case (uint8_t)SOUND_CLAUSE_UNILATERAL_POWER:
+        return "unilateral_power";
+    case (uint8_t)SOUND_CLAUSE_AMBIGUOUS_OBLIGATION:
+        return "ambiguous_obligation";
+    case (uint8_t)SOUND_CLAUSE_PRESUP_SMUGGLE:
+        return "presup_smuggle";
+    case (uint8_t)SOUND_CLAUSE_CHISHOLM_DEFAULT:
+        return "chisholm_default";
+    case (uint8_t)SOUND_CLAUSE_RECIPROCITY:
+        return "reciprocity";
+    default:
+        return "base_fee";
+    }
+}
+
+static const char *sound_edge_kind_json_str(uint8_t k) {
+    switch (k) {
+    case (uint8_t)SOUND_EDGE_OVERRIDE:
+        return "override";
+    case (uint8_t)SOUND_EDGE_POWER_DELEGATE:
+        return "power_delegate";
+    case (uint8_t)SOUND_EDGE_DEFAULT_TRIGGER:
+        return "default_trigger";
+    default:
+        return "redirect";
+    }
+}
+
+static const char *sound_b4_json_str(uint8_t b4) {
+    switch (b4 & 3U) {
+    case (uint8_t)SOUND_B4_BOT:
+        return "BOT";
+    case (uint8_t)SOUND_B4_FALSE:
+        return "FALSE";
+    case (uint8_t)SOUND_B4_TOP:
+        return "TOP";
+    default:
+        return "TRUE";
+    }
+}
+
+static bool sound_write_contract_spec_json_file(const sound_contract_spec_t *spec,
+                                                const char *path) {
+    if (spec == NULL || path == NULL) {
+        return false;
+    }
+    FILE *fp = fopen(path, "wb");
+    if (fp == NULL) {
+        return false;
+    }
+    fprintf(fp, "{\n");
+    fprintf(fp, "  \"seed\": \"0x%016llx\",\n", (unsigned long long)spec->seed);
+    fprintf(fp, "  \"max_loss_cap\": %llu,\n", (unsigned long long)spec->max_loss_cap);
+    fprintf(fp, "  \"max_exit_fee\": %llu,\n", (unsigned long long)spec->max_exit_fee);
+    fprintf(fp, "  \"protected_mask\": %llu,\n", (unsigned long long)spec->protected_mask);
+    fprintf(fp, "  \"max_asym_num\": %llu,\n", (unsigned long long)spec->max_asym_num);
+    fprintf(fp, "  \"max_asym_den\": %llu,\n", (unsigned long long)spec->max_asym_den);
+    fprintf(fp, "  \"coverage_gaps\": %u,\n", (unsigned)spec->coverage_gaps);
+    fprintf(fp, "  \"clauses\": [\n");
+    for (uint32_t i = 0U; i < spec->num_clauses; i++) {
+        const sound_contract_clause_t *c = &spec->clauses[i];
+        fprintf(fp,
+                "    {\"clause_id\": %u, \"kind\": \"%s\", \"disclosed\": %s, "
+                "\"b4_truth\": \"%s\", \"sheaf_cycle\": %s, \"target_mask\": %llu, "
+                "\"base_loss\": %llu, \"extra_drift\": %llu, \"exit_fee\": %llu, "
+                "\"cons_penalty\": %llu, \"inst_penalty\": %llu}%s\n",
+                (unsigned)c->clause_id, sound_clause_kind_json_str(c->kind),
+                (c->disclosed != 0U) ? "true" : "false", sound_b4_json_str(c->b4_truth),
+                (c->sheaf_cycle != 0U) ? "true" : "false", (unsigned long long)c->target_mask,
+                (unsigned long long)c->base_loss, (unsigned long long)c->extra_drift,
+                (unsigned long long)c->exit_fee, (unsigned long long)c->cons_penalty,
+                (unsigned long long)c->inst_penalty, (i + 1U < spec->num_clauses) ? "," : "");
+    }
+    fprintf(fp, "  ],\n");
+    fprintf(fp, "  \"edges\": [\n");
+    for (uint32_t i = 0U; i < spec->num_edges; i++) {
+        const sound_contract_edge_t *e = &spec->edges[i];
+        fprintf(fp,
+                "    {\"src\": %u, \"dst\": %u, \"edge_kind\": \"%s\", "
+                "\"cocycle_shift\": %u, \"extra_exposure\": %llu}%s\n",
+                (unsigned)e->src, (unsigned)e->dst, sound_edge_kind_json_str(e->edge_kind),
+                (unsigned)e->cocycle_shift, (unsigned long long)e->extra_exposure,
+                (i + 1U < spec->num_edges) ? "," : "");
+    }
+    fprintf(fp, "  ]\n");
+    fprintf(fp, "}\n");
+    int err = ferror(fp);
+    int cls = fclose(fp);
+    return (err == 0) && (cls == 0);
+}
+
 static int sound_cmd_audit_contract(int argc, char **argv) {
-    const char *in_json = argv[2];
+    const char *in_path = argv[2];
     const char *out_lean = sound_parse_opt(argc, argv, 3, "--out-lean");
     const char *out_fir = sound_parse_opt(argc, argv, 3, "--out-fir");
     const char *out_json = sound_parse_opt(argc, argv, 3, "--out-json");
+    const char *out_cert = sound_parse_opt(argc, argv, 3, "--out-cert");
     const char *out_receipt = sound_parse_opt(argc, argv, 3, "--out-receipt");
 
     static sound_contract_spec_t spec;
     static sound_contract_audit_t audit;
-    if (!sound_parse_contract_json_file(in_json, &spec)) {
-        fprintf(stderr, "ERROR: unable to parse contract JSON '%s'\n", in_json);
+    if (!sound_parse_contract_file(in_path, &spec)) {
+        fprintf(stderr, "ERROR: unable to parse contract (.sndc/.json) '%s'\n", in_path);
         return 1;
     }
     sound_audit_contract(&spec, &audit);
     if (!sound_cert_emit_contract_fir(&audit, out_fir, &g_cert_ws)) {
-        fprintf(stderr, "ERROR: contract FIR generation/eval failed\n");
+        fprintf(stderr, "ERROR: contract FIR2 generation/eval failed\n");
         return 1;
     }
     if (out_lean != NULL && !sound_cert_emit_contract_lean(&spec, &audit, out_lean)) {
@@ -2646,13 +3087,18 @@ static int sound_cmd_audit_contract(int argc, char **argv) {
         fprintf(stderr, "ERROR: unable to write '%s'\n", out_json);
         return 1;
     }
+    if (out_cert != NULL &&
+        !sound_cert_emit_contract_cert_file(&spec, &audit, &g_cert_ws, out_cert)) {
+        fprintf(stderr, "ERROR: unable to write '%s'\n", out_cert);
+        return 1;
+    }
     if (out_receipt != NULL && !sound_cert_emit_contract_receipt(&spec, &audit, out_receipt)) {
         fprintf(stderr, "ERROR: unable to write '%s'\n", out_receipt);
         return 1;
     }
     printf("[audit-contract] %s | verdict=%s viol=0x%x base=%llu edge_exp=%llu worst=%llu "
-           "drift=%lld pred=%u mal_edges=%u sheaf_h1=%u bypass=0x%x rep_cert=%u fir=%zuB\n",
-           in_json, (audit.certified != UINT32_C(0)) ? "CERTIFIED" : "VETOED", audit.viol_flags,
+           "drift=%lld pred=%u mal_edges=%u sheaf_h1=%u bypass=0x%x rep_cert=%u fir2=%zuB\n",
+           in_path, (audit.certified != UINT32_C(0)) ? "CERTIFIED" : "VETOED", audit.viol_flags,
            (unsigned long long)audit.base_loss_sum, (unsigned long long)audit.edge_exposure_sum,
            (unsigned long long)audit.worst_case_loss, (long long)audit.benefit_drift,
            audit.num_predatory_clauses, audit.num_malicious_edges, audit.graph_sheaf_h1_obstructed,
@@ -2660,18 +3106,155 @@ static int sound_cmd_audit_contract(int argc, char **argv) {
     return 0;
 }
 
+static int sound_cmd_pack_arena(const char *in_path, const char *out_path) {
+    if (!sound_load_arena_file(in_path, &g_cli_arena)) {
+        fprintf(stderr, "ERROR: unable to read SoundArena '%s'\n", in_path);
+        return 1;
+    }
+    size_t packed_len = 0U;
+    if (!sound_save_packed_arena_file(out_path, &g_cli_arena, &packed_len)) {
+        fprintf(stderr, "ERROR: unable to pack FLWA '%s'\n", out_path);
+        return 1;
+    }
+    printf("[pack-arena] %s (%uB raw) -> %s (%zuB FLWA)\n", in_path, SOUND_ARENA_BYTES, out_path,
+           packed_len);
+    return 0;
+}
+
+static int sound_cmd_unpack_arena(const char *in_path, const char *out_path) {
+    if (!sound_load_arena_file(in_path, &g_cli_arena)) {
+        fprintf(stderr, "ERROR: unable to read SoundArena '%s'\n", in_path);
+        return 1;
+    }
+    if (!sound_save_raw_arena_file(out_path, &g_cli_arena)) {
+        fprintf(stderr, "ERROR: unable to write raw SoundArena '%s'\n", out_path);
+        return 1;
+    }
+    printf("[unpack-arena] %s -> %s (%uB raw)\n", in_path, out_path, SOUND_ARENA_BYTES);
+    return 0;
+}
+
+static int sound_cmd_pack_fir(const char *in_path, const char *out_path) {
+    static uint8_t buf[FLOW_IR_MAX_FILE_BYTES];
+    static flow_ir_prog_t prog;
+    size_t in_len = 0U;
+    size_t out_len = 0U;
+    if (!sound_read_bin_file_buf(in_path, buf, sizeof(buf), &in_len) ||
+        !flow_ir_load_bytes(&prog, buf, in_len) ||
+        !flow_ir_encode_packed_bytes(&prog, buf, sizeof(buf), &out_len) ||
+        !sound_save_bin_file(out_path, buf, out_len)) {
+        fprintf(stderr, "ERROR: pack-fir failed '%s' -> '%s'\n", in_path, out_path);
+        return 1;
+    }
+    printf("[pack-fir] %s (%zuB) -> %s (%zuB FIR2)\n", in_path, in_len, out_path, out_len);
+    return 0;
+}
+
+static int sound_cmd_unpack_fir(const char *in_path, const char *out_path) {
+    static uint8_t buf[FLOW_IR_MAX_FILE_BYTES];
+    static flow_ir_prog_t prog;
+    size_t in_len = 0U;
+    size_t out_len = 0U;
+    if (!sound_read_bin_file_buf(in_path, buf, sizeof(buf), &in_len) ||
+        !flow_ir_load_bytes(&prog, buf, in_len) ||
+        !flow_ir_encode_bytes(&prog, buf, sizeof(buf), &out_len) ||
+        !sound_save_bin_file(out_path, buf, out_len)) {
+        fprintf(stderr, "ERROR: unpack-fir failed '%s' -> '%s'\n", in_path, out_path);
+        return 1;
+    }
+    printf("[unpack-fir] %s (%zuB) -> %s (%zuB FIR1)\n", in_path, in_len, out_path, out_len);
+    return 0;
+}
+
+static int sound_cmd_pack_contract(const char *in_path, const char *out_path) {
+    static sound_contract_spec_t spec;
+    static sound_contract_spec_t rt;
+    static uint8_t buf[SOUND_CERT_MAX_BYTES];
+    size_t out_len = 0U;
+    if (!sound_parse_contract_file(in_path, &spec) ||
+        !sound_cert_pack_contract_spec(&spec, buf, sizeof(buf), &out_len) ||
+        !sound_cert_unpack_contract_spec(buf, out_len, &rt) ||
+        !sound_cert_bytes_equal((const uint8_t *)&spec, (const uint8_t *)&rt, sizeof(spec)) ||
+        !sound_save_bin_file(out_path, buf, out_len)) {
+        fprintf(stderr, "ERROR: pack-contract failed '%s' -> '%s'\n", in_path, out_path);
+        return 1;
+    }
+    printf("[pack-contract] %s -> %s (%zuB SNDC)\n", in_path, out_path, out_len);
+    return 0;
+}
+
+static int sound_cmd_unpack_contract(const char *in_path, const char *out_path) {
+    static uint8_t buf[SOUND_CERT_MAX_BYTES];
+    static sound_contract_spec_t spec;
+    size_t in_len = 0U;
+    if (!sound_read_bin_file_buf(in_path, buf, sizeof(buf), &in_len) ||
+        !sound_cert_unpack_contract_spec(buf, in_len, &spec) ||
+        !sound_write_contract_spec_json_file(&spec, out_path)) {
+        fprintf(stderr, "ERROR: unpack-contract failed '%s' -> '%s'\n", in_path, out_path);
+        return 1;
+    }
+    printf("[unpack-contract] %s (%zuB SNDC) -> %s\n", in_path, in_len, out_path);
+    return 0;
+}
+
+static int sound_cmd_verify_cert(const char *in_path) {
+    static uint8_t buf[SOUND_CERT_MAX_BYTES];
+    size_t in_len = 0U;
+    uint8_t kind = 0U;
+    uint8_t sub = 0U;
+    if (!sound_read_bin_file_buf(in_path, buf, sizeof(buf), &in_len) ||
+        !sound_cert_verify_bytes(buf, in_len, &kind, &sub)) {
+        fprintf(stderr, "ERROR: SNDC cert verification failed on '%s'\n", in_path);
+        return 1;
+    }
+    printf("[verify-cert] %s (%zuB SNDC, kind=%u, submode=%u) | integrity=OK\n", in_path, in_len,
+           (unsigned)kind, (unsigned)sub);
+    return 0;
+}
+
+static int sound_cmd_unpack_cert(const char *in_path, const char *out_json) {
+    static uint8_t buf[SOUND_CERT_MAX_BYTES];
+    size_t in_len = 0U;
+    if (!sound_read_bin_file_buf(in_path, buf, sizeof(buf), &in_len)) {
+        fprintf(stderr, "ERROR: unable to read '%s'\n", in_path);
+        return 1;
+    }
+    FILE *fp = fopen(out_json, "wb");
+    if (fp == NULL) {
+        fprintf(stderr, "ERROR: unable to open '%s'\n", out_json);
+        return 1;
+    }
+    bool ok = sound_cert_unpack_to_json_fp(buf, in_len, fp);
+    int cls = fclose(fp);
+    if (!ok || cls != 0) {
+        fprintf(stderr, "ERROR: unpack-cert failed on '%s'\n", in_path);
+        return 1;
+    }
+    printf("[unpack-cert] %s (%zuB SNDC) -> %s\n", in_path, in_len, out_json);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "Usage:\n  sound selftest\n  sound verify <arena.snd> [--json]\n"
-                        "  sound repair <arena.snd> [seed]\n"
-                        "  sound lift-fir <arena.snd> <out.fir> [--repaired [seed]]\n"
-                        "  sound lift-policy-fir <arena.snd> <out.fir>\n"
+        fprintf(stderr, "Usage:\n  sound selftest\n  sound verify <arena.flwa|arena.snd> [--json]\n"
+                        "  sound repair <arena.flwa|arena.snd> [seed]\n"
+                        "  sound lift-fir <arena.flwa|arena.snd> <out.fir2> [--repaired [seed]] "
+                        "[--raw-fir]\n"
+                        "  sound lift-policy-fir <arena.flwa|arena.snd> <out.fir2> [--raw-fir]\n"
+                        "  sound pack-arena <in.snd|in.flwa> <out.flwa>\n"
+                        "  sound unpack-arena <in.flwa|in.snd> <out.snd>\n"
+                        "  sound pack-fir <in.fir|in.fir2> <out.fir2>\n"
+                        "  sound unpack-fir <in.fir2|in.fir> <out.fir>\n"
+                        "  sound pack-contract <in.json|in.sndc> <out.sndc>\n"
+                        "  sound unpack-contract <in.sndc> <out.json>\n"
+                        "  sound verify-cert <cert.bin>\n"
+                        "  sound unpack-cert <cert.bin> <out.json>\n"
                         "  sound classify-<bilattice|sheaf|hohfeld|projection> [--out-json <p>]\n"
                         "  sound hunt <paradox-min|sheaf-h1|chisholm|norm-trap|aspect-firewall|"
                         "presup-filter|contract-drift|contract-loophole> [--seed <u64>] "
-                        "[--out-lean <p>] [--out-fir <p>] [--out-json <p>]\n"
-                        "  sound audit-contract <contract.json> [--out-lean <p>] [--out-fir <p>] "
-                        "[--out-json <p>] [--out-receipt <p>]\n");
+                        "[--out-lean <p>] [--out-fir <p>] [--out-json <p>] [--out-cert <p>]\n"
+                        "  sound audit-contract <contract.sndc|contract.json> [--out-lean <p>] "
+                        "[--out-fir <p>] [--out-json <p>] [--out-cert <p>] [--out-receipt <p>]\n");
         return 1;
     }
     if (sound_cstr_eq(argv[1], "selftest")) {
@@ -2688,7 +3271,31 @@ int main(int argc, char **argv) {
         return sound_cmd_lift_fir(argc, argv);
     }
     if (sound_cstr_eq(argv[1], "lift-policy-fir") && argc >= 4) {
-        return sound_cmd_lift_policy_fir(argv[2], argv[3]);
+        return sound_cmd_lift_policy_fir(argc, argv);
+    }
+    if (sound_cstr_eq(argv[1], "pack-arena") && argc == 4) {
+        return sound_cmd_pack_arena(argv[2], argv[3]);
+    }
+    if (sound_cstr_eq(argv[1], "unpack-arena") && argc == 4) {
+        return sound_cmd_unpack_arena(argv[2], argv[3]);
+    }
+    if (sound_cstr_eq(argv[1], "pack-fir") && argc == 4) {
+        return sound_cmd_pack_fir(argv[2], argv[3]);
+    }
+    if (sound_cstr_eq(argv[1], "unpack-fir") && argc == 4) {
+        return sound_cmd_unpack_fir(argv[2], argv[3]);
+    }
+    if (sound_cstr_eq(argv[1], "pack-contract") && argc == 4) {
+        return sound_cmd_pack_contract(argv[2], argv[3]);
+    }
+    if (sound_cstr_eq(argv[1], "unpack-contract") && argc == 4) {
+        return sound_cmd_unpack_contract(argv[2], argv[3]);
+    }
+    if (sound_cstr_eq(argv[1], "verify-cert") && argc == 3) {
+        return sound_cmd_verify_cert(argv[2]);
+    }
+    if (sound_cstr_eq(argv[1], "unpack-cert") && argc == 4) {
+        return sound_cmd_unpack_cert(argv[2], argv[3]);
     }
     if (sound_cstr_eq(argv[1], "classify-bilattice")) {
         return sound_cmd_classify_bilattice(sound_parse_opt(argc, argv, 2, "--out-json"));

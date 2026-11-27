@@ -132,8 +132,12 @@ def main() -> int:
                 tag = f"{family}_{role}"
                 in_p = CONTRACTS_DIR / fname
                 lean_p = tmp_dir / f"{tag}.lean"
-                fir_p = tmp_dir / f"{tag}.fir"
+                fir_p = tmp_dir / f"{tag}.fir2"
                 json_p = tmp_dir / f"{tag}.json"
+                cert_p = tmp_dir / f"{tag}.cert.bin"
+                rt_json_p = tmp_dir / f"{tag}.rt.json"
+                spec_sndc = tmp_dir / f"{tag}.sndc"
+                sndc_json_p = tmp_dir / f"{tag}.sndc.json"
                 receipt_p = tmp_dir / f"{tag}.receipt.md"
                 proc = subprocess.run(
                     [
@@ -146,6 +150,8 @@ def main() -> int:
                         str(fir_p),
                         "--out-json",
                         str(json_p),
+                        "--out-cert",
+                        str(cert_p),
                         "--out-receipt",
                         str(receipt_p),
                     ],
@@ -155,7 +161,33 @@ def main() -> int:
                     check=False,
                 )
                 assert proc.returncode == 0, f"audit-contract failed on {fname}:\n{proc.stderr}"
-                assert fir_p.read_bytes().startswith(b"FIR1"), f"Missing FIR1 header for {fname}"
+                assert fir_p.read_bytes().startswith(b"FIR2"), f"Missing FIR2 header for {fname}"
+                assert cert_p.read_bytes().startswith(b"SNDC"), f"Missing SNDC cert for {fname}"
+                assert cert_p.stat().st_size < json_p.stat().st_size
+                u_res = subprocess.run(
+                    [str(SOUND_BIN), "unpack-cert", str(cert_p), str(rt_json_p)],
+                    cwd=str(ROOT),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                assert u_res.returncode == 0 and rt_json_p.read_bytes() == json_p.read_bytes()
+                pk_res = subprocess.run(
+                    [str(SOUND_BIN), "pack-contract", str(in_p), str(spec_sndc)],
+                    cwd=str(ROOT),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                assert pk_res.returncode == 0 and spec_sndc.stat().st_size < in_p.stat().st_size
+                au_res = subprocess.run(
+                    [str(SOUND_BIN), "audit-contract", str(spec_sndc), "--out-json", str(sndc_json_p)],
+                    cwd=str(ROOT),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                assert au_res.returncode == 0 and sndc_json_p.read_bytes() == json_p.read_bytes()
                 data = json.loads(json_p.read_text(encoding="utf-8"))
                 assert data["fir_eval_ok"] is True, f"FIR eval failed for {fname}"
                 receipt_txt = receipt_p.read_text(encoding="utf-8")

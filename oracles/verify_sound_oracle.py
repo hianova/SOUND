@@ -74,10 +74,17 @@ def verify_golden_parity() -> None:
     cases = manifest["cases"]
     assert len(cases) == 10, f"Expected 10 golden cases, got {len(cases)}"
 
+    total_flwa_b = 0
+    total_raw_snd_b = 0
     for c in cases:
-        snd_path = BUILD / "golden" / f"{c['name']}.snd"
-        assert snd_path.is_file() and snd_path.stat().st_size == 16384
-        res = run_cmd([str(SOUND_BIN), "verify", str(snd_path), "--json"])
+        flwa_path = BUILD / "golden" / f"{c['name']}.flwa"
+        assert flwa_path.is_file(), f"Missing {flwa_path}"
+        flwa_bytes = flwa_path.read_bytes()
+        assert flwa_bytes.startswith(b"FLWA") and len(flwa_bytes) < 16384
+        total_flwa_b += len(flwa_bytes)
+        total_raw_snd_b += 16384
+
+        res = run_cmd([str(SOUND_BIN), "verify", str(flwa_path), "--json"])
         assert res.returncode == 0, f"sound verify failed for {c['name']}: {res.stderr}"
         got = json.loads(res.stdout)
         for k in (
@@ -92,28 +99,55 @@ def verify_golden_parity() -> None:
         ):
             assert got[k] == c[k], f"{c['name']} mismatch on {k}: C17={got[k]} Lean={c[k]}"
 
-    for name in ("case3_park", "case2_auction_pre"):
-        snd_path = BUILD / "golden" / f"{name}.snd"
-        lean_fir = BUILD / "golden" / f"{name}.fir"
-        cli_fir = BUILD / "golden" / f"{name}_cli.fir"
-        res = run_cmd([str(SOUND_BIN), "lift-fir", str(snd_path), str(cli_fir)])
-        assert res.returncode == 0, f"lift-fir failed on {name}: {res.stderr}"
-        b_lean = lean_fir.read_bytes()
-        b_cli = cli_fir.read_bytes()
-        assert len(b_lean) == 2144 and b_lean == b_cli, f"FIR1 parity mismatch on {name}"
+        # Verify backward-compatible raw 16,384B .snd decode + bit-exact FLWA <-> .snd roundtrip
+        tmp_snd = BUILD / "certs" / f"{c['name']}_rt.snd"
+        tmp_flwa = BUILD / "certs" / f"{c['name']}_rt.flwa"
+        u_res = run_cmd([str(SOUND_BIN), "unpack-arena", str(flwa_path), str(tmp_snd)])
+        assert u_res.returncode == 0 and tmp_snd.stat().st_size == 16384
+        v_raw = run_cmd([str(SOUND_BIN), "verify", str(tmp_snd), "--json"])
+        assert v_raw.returncode == 0 and json.loads(v_raw.stdout)["established_mask"] == c["established_mask"]
+        p_res = run_cmd([str(SOUND_BIN), "pack-arena", str(tmp_snd), str(tmp_flwa)])
+        assert p_res.returncode == 0 and tmp_flwa.read_bytes() == flwa_bytes
+        tmp_snd.unlink(missing_ok=True)
+        tmp_flwa.unlink(missing_ok=True)
 
-    rep_res = run_cmd([str(SOUND_BIN), "repair", str(BUILD / "golden" / "nixon_diamond.snd")])
+    for name in ("case3_park", "case2_auction_pre"):
+        flwa_path = BUILD / "golden" / f"{name}.flwa"
+        lean_fir2 = BUILD / "golden" / f"{name}.fir2"
+        cli_fir2 = BUILD / "golden" / f"{name}_cli.fir2"
+        res = run_cmd([str(SOUND_BIN), "lift-fir", str(flwa_path), str(cli_fir2)])
+        assert res.returncode == 0, f"lift-fir failed on {name}: {res.stderr}"
+        b_lean = lean_fir2.read_bytes()
+        b_cli = cli_fir2.read_bytes()
+        assert b_cli.startswith(b"FIR2") and len(b_cli) < 2144 and b_lean == b_cli, (
+            f"FIR2 parity mismatch on {name}: lean={len(b_lean)} cli={len(b_cli)}"
+        )
+
+        # Verify FIR2 <-> legacy 2,144B FIR1 roundtrip
+        cli_fir1 = BUILD / "certs" / f"{name}_rt.fir"
+        cli_fir2_rt = BUILD / "certs" / f"{name}_rt.fir2"
+        u_fir = run_cmd([str(SOUND_BIN), "unpack-fir", str(cli_fir2), str(cli_fir1)])
+        assert u_fir.returncode == 0 and cli_fir1.stat().st_size == 2144 and cli_fir1.read_bytes().startswith(b"FIR1")
+        p_fir = run_cmd([str(SOUND_BIN), "pack-fir", str(cli_fir1), str(cli_fir2_rt)])
+        assert p_fir.returncode == 0 and cli_fir2_rt.read_bytes() == b_cli
+        cli_fir1.unlink(missing_ok=True)
+        cli_fir2_rt.unlink(missing_ok=True)
+
+    rep_res = run_cmd([str(SOUND_BIN), "repair", str(BUILD / "golden" / "nixon_diamond.flwa")])
     assert rep_res.returncode == 0 and "conv=1" in rep_res.stdout, rep_res.stdout + rep_res.stderr
-    rep_fir = BUILD / "golden" / "nixon_repaired_cli.fir"
+    rep_fir2 = BUILD / "golden" / "nixon_repaired_cli.fir2"
     lift_rep = run_cmd([
         str(SOUND_BIN),
         "lift-fir",
-        str(BUILD / "golden" / "nixon_diamond.snd"),
-        str(rep_fir),
+        str(BUILD / "golden" / "nixon_diamond.flwa"),
+        str(rep_fir2),
         "--repaired",
     ])
-    assert lift_rep.returncode == 0 and rep_fir.read_bytes().startswith(b"FIR1")
-    print(f"  [Oracle-Golden] 10/10 16KB SoundArena + 2x 2,144B FIR1 + SEARU repair bit-exact PASS")
+    assert lift_rep.returncode == 0 and rep_fir2.read_bytes().startswith(b"FIR2")
+    print(
+        f"  [Oracle-Golden] 10/10 FLWA({total_flwa_b}B vs {total_raw_snd_b}B raw) + "
+        f"2x FIR2 + SEARU repair bit-exact PASS"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -450,8 +484,10 @@ def verify_all_hunts_and_certs() -> None:
     jobs = []
     for mode, mod_name in modes:
         lean_p = cert_dir / f"{mod_name}.lean"
-        fir_p = cert_dir / f"{mode}.fir"
+        fir_p = cert_dir / f"{mode}.fir2"
         json_p = cert_dir / f"{mode}.json"
+        cert_p = cert_dir / f"{mode}.cert.bin"
+        rt_json_p = cert_dir / f"{mode}.rt.json"
         res = run_cmd([
             str(SOUND_BIN),
             "hunt",
@@ -462,10 +498,23 @@ def verify_all_hunts_and_certs() -> None:
             str(fir_p),
             "--out-json",
             str(json_p),
+            "--out-cert",
+            str(cert_p),
         ])
         assert res.returncode == 0, f"hunt {mode} failed: {res.stderr}"
         fir_bytes = fir_p.read_bytes()
-        assert len(fir_bytes) >= 64 and fir_bytes.startswith(b"FIR1"), f"Bad FIR1 on {mode}"
+        assert len(fir_bytes) >= 16 and fir_bytes.startswith(b"FIR2"), f"Bad FIR2 on {mode}"
+        cert_bytes = cert_p.read_bytes()
+        assert cert_bytes.startswith(b"SNDC") and len(cert_bytes) < json_p.stat().st_size, (
+            f"Bad SNDC cert on {mode}: cert={len(cert_bytes)}B json={json_p.stat().st_size}B"
+        )
+        v_cert = run_cmd([str(SOUND_BIN), "verify-cert", str(cert_p)])
+        assert v_cert.returncode == 0, f"verify-cert failed on {mode}: {v_cert.stderr}"
+        u_cert = run_cmd([str(SOUND_BIN), "unpack-cert", str(cert_p), str(rt_json_p)])
+        assert u_cert.returncode == 0 and rt_json_p.read_bytes() == json_p.read_bytes(), (
+            f"SNDC byte-exact JSON roundtrip mismatch on {mode}"
+        )
+        rt_json_p.unlink(missing_ok=True)
         w = json.loads(json_p.read_text(encoding="utf-8"))
         assert w["fir_eval_ok"] is True
 
