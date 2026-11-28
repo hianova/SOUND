@@ -64,35 +64,7 @@ static inline bool sound_cert_bytes_equal(const uint8_t *a, const uint8_t *b, si
 }
 
 static inline bool sound_cert_seal_and_write_fir(sound_cert_ws_t *ws, const char *out_fir_path) {
-    if (ws == NULL) {
-        return false;
-    }
-    static uint8_t rt_buf[FLOW_IR_MAX_FILE_BYTES];
-    size_t rt_len = 0U;
-    flow_ir_dag_stats_t dag;
-    if (!flow_ir_encode_packed_bytes(&ws->ir_prog, ws->wire_buf, sizeof(ws->wire_buf),
-                                     &ws->wire_len)) {
-        return false;
-    }
-    if (flow_ir_load_bytes_fiber(&ws->ir_reloaded, ws->wire_buf, ws->wire_len) !=
-        FLOW_IR_FIBER_COMMITTED) {
-        return false;
-    }
-    if (!flow_ir_encode_packed_bytes(&ws->ir_reloaded, rt_buf, sizeof(rt_buf), &rt_len) ||
-        rt_len != ws->wire_len || !sound_cert_bytes_equal(ws->wire_buf, rt_buf, ws->wire_len)) {
-        return false;
-    }
-    ws->ir_linear_ok = (ws->ir_reloaded.mult == FLOW_IR_MULT_LINEAR);
-    ws->ir_unitary_ok = flow_ir_admits_unitary(&ws->ir_reloaded);
-    if (!ws->ir_linear_ok || !ws->ir_unitary_ok || !flow_ir_analyze_dag(&ws->ir_reloaded, &dag)) {
-        return false;
-    }
-    ws->mult_bits = dag.mult_bits;
-    ws->mult_depth = dag.mult_depth;
-    if (out_fir_path != NULL && out_fir_path[0] != '\0') {
-        return flow_ir_write_bytes_file(out_fir_path, ws->wire_buf, ws->wire_len);
-    }
-    return true;
+    return flow_ir_builder_seal_packed_and_write(ws, out_fir_path);
 }
 
 static inline void sound_cert_init_prog(sound_cert_ws_t *ws, const char *name) {
