@@ -31,26 +31,6 @@ typedef enum {
     SOUND_HUNT_MODE_CONTRACT_LOOPHOLE = 8U
 } sound_hunt_mode_t;
 
-static inline uint32_t sound_cert_emit_const(flow_ir_prog_t *p, uint16_t width, uint64_t val,
-                                             const char *name) {
-    return flow_ir_emit_const(p, width, val, name);
-}
-
-static inline uint32_t sound_cert_emit_op1(flow_ir_prog_t *p, uint16_t kind, uint16_t width,
-                                           uint32_t in0, uint64_t p0, const char *name) {
-    return flow_ir_emit_op1(p, kind, width, in0, p0, name);
-}
-
-static inline uint32_t sound_cert_emit_op2(flow_ir_prog_t *p, uint16_t kind, uint16_t width,
-                                           uint32_t lhs, uint32_t rhs, const char *name) {
-    return flow_ir_emit_op2(p, kind, width, lhs, rhs, name);
-}
-
-static inline uint32_t sound_cert_emit_sel(flow_ir_prog_t *p, uint16_t width, uint32_t sel,
-                                           uint32_t vf, uint32_t vt, const char *name) {
-    return flow_ir_emit_sel(p, width, sel, vf, vt, name);
-}
-
 static inline bool sound_cert_bytes_equal(const uint8_t *a, const uint8_t *b, size_t n) {
     if (a == NULL || b == NULL) {
         return false;
@@ -61,14 +41,6 @@ static inline bool sound_cert_bytes_equal(const uint8_t *a, const uint8_t *b, si
         }
     }
     return true;
-}
-
-static inline bool sound_cert_seal_and_write_fir(sound_cert_ws_t *ws, const char *out_fir_path) {
-    return flow_ir_builder_seal_packed_and_write(ws, out_fir_path);
-}
-
-static inline void sound_cert_init_prog(sound_cert_ws_t *ws, const char *name) {
-    flow_ir_builder_init(ws, name);
 }
 
 /* ============================================================================
@@ -145,7 +117,7 @@ static inline bool sound_cert_emit_paradox_fir(const sound_paradox_witness_t *w,
     if (w == NULL || ws == NULL) {
         return false;
     }
-    sound_cert_init_prog(ws, "paradox_min_gamma");
+    flow_ir_builder_init(ws, "paradox_min_gamma");
     flow_ir_prog_t *p = &ws->ir_prog;
     p->num_inputs = 1U;
     p->inputs[0] = 0U;
@@ -154,36 +126,36 @@ static inline bool sound_cert_emit_paradox_fir(const sound_paradox_witness_t *w,
     snprintf(p->vals[0].name, sizeof(p->vals[0].name), "blocked3");
     p->num_vals = 1U;
 
-    uint32_t k0 = sound_cert_emit_const(p, 3U, UINT64_C(0), "c0");
-    uint32_t c1 = sound_cert_emit_const(p, 3U, UINT64_C(1), "c1");
-    uint32_t bit0 = sound_cert_emit_const(p, 3U, UINT64_C(1), "b0");
-    uint32_t bit1 = sound_cert_emit_const(p, 3U, UINT64_C(2), "b1");
-    uint32_t bit2 = sound_cert_emit_const(p, 3U, UINT64_C(4), "b2");
-    uint32_t a0 = sound_cert_emit_const(p, 3U, (uint64_t)(w->atk_to[0] & 7U), "a0");
-    uint32_t a1 = sound_cert_emit_const(p, 3U, (uint64_t)(w->atk_to[1] & 7U), "a1");
-    uint32_t a2 = sound_cert_emit_const(p, 3U, (uint64_t)(w->atk_to[2] & 7U), "a2");
+    uint32_t k0 = flow_ir_emit_const(p, 3U, UINT64_C(0), "c0");
+    uint32_t c1 = flow_ir_emit_const(p, 3U, UINT64_C(1), "c1");
+    uint32_t bit0 = flow_ir_emit_const(p, 3U, UINT64_C(1), "b0");
+    uint32_t bit1 = flow_ir_emit_const(p, 3U, UINT64_C(2), "b1");
+    uint32_t bit2 = flow_ir_emit_const(p, 3U, UINT64_C(4), "b2");
+    uint32_t a0 = flow_ir_emit_const(p, 3U, (uint64_t)(w->atk_to[0] & 7U), "a0");
+    uint32_t a1 = flow_ir_emit_const(p, 3U, (uint64_t)(w->atk_to[1] & 7U), "a1");
+    uint32_t a2 = flow_ir_emit_const(p, 3U, (uint64_t)(w->atk_to[2] & 7U), "a2");
     (void)c1;
 
-    uint32_t h0 = sound_cert_emit_op2(p, FLOW_IR_OP_AND_VEC, 3U, 0U, a0, "h0");
-    uint32_t ok0 = sound_cert_emit_op1(p, FLOW_IR_OP_EQ_ZERO, 1U, h0, 0U, "ok0");
-    uint32_t t0 = sound_cert_emit_sel(p, 3U, ok0, k0, bit0, "t0");
+    uint32_t h0 = flow_ir_emit_op2(p, FLOW_IR_OP_AND_VEC, 3U, 0U, a0, "h0");
+    uint32_t ok0 = flow_ir_emit_op1(p, FLOW_IR_OP_EQ_ZERO, 1U, h0, 0U, "ok0");
+    uint32_t t0 = flow_ir_emit_sel(p, 3U, ok0, k0, bit0, "t0");
 
-    uint32_t h1 = sound_cert_emit_op2(p, FLOW_IR_OP_AND_VEC, 3U, 0U, a1, "h1");
-    uint32_t ok1 = sound_cert_emit_op1(p, FLOW_IR_OP_EQ_ZERO, 1U, h1, 0U, "ok1");
-    uint32_t t1 = sound_cert_emit_sel(p, 3U, ok1, k0, bit1, "t1");
+    uint32_t h1 = flow_ir_emit_op2(p, FLOW_IR_OP_AND_VEC, 3U, 0U, a1, "h1");
+    uint32_t ok1 = flow_ir_emit_op1(p, FLOW_IR_OP_EQ_ZERO, 1U, h1, 0U, "ok1");
+    uint32_t t1 = flow_ir_emit_sel(p, 3U, ok1, k0, bit1, "t1");
 
-    uint32_t h2 = sound_cert_emit_op2(p, FLOW_IR_OP_AND_VEC, 3U, 0U, a2, "h2");
-    uint32_t ok2 = sound_cert_emit_op1(p, FLOW_IR_OP_EQ_ZERO, 1U, h2, 0U, "ok2");
-    uint32_t t2 = sound_cert_emit_sel(p, 3U, ok2, k0, bit2, "t2");
+    uint32_t h2 = flow_ir_emit_op2(p, FLOW_IR_OP_AND_VEC, 3U, 0U, a2, "h2");
+    uint32_t ok2 = flow_ir_emit_op1(p, FLOW_IR_OP_EQ_ZERO, 1U, h2, 0U, "ok2");
+    uint32_t t2 = flow_ir_emit_sel(p, 3U, ok2, k0, bit2, "t2");
 
-    uint32_t g01 = sound_cert_emit_op2(p, FLOW_IR_OP_XOR_VEC, 3U, t0, t1, "g01");
-    uint32_t g_all = sound_cert_emit_op2(p, FLOW_IR_OP_XOR_VEC, 3U, g01, t2, "gamma_out");
+    uint32_t g01 = flow_ir_emit_op2(p, FLOW_IR_OP_XOR_VEC, 3U, t0, t1, "g01");
+    uint32_t g_all = flow_ir_emit_op2(p, FLOW_IR_OP_XOR_VEC, 3U, g01, t2, "gamma_out");
     if (g_all == UINT32_MAX) {
         return false;
     }
     p->num_outputs = 1U;
     p->outputs[0] = g_all;
-    if (!sound_cert_seal_and_write_fir(ws, out_fir_path)) {
+    if (!flow_ir_builder_seal_packed_and_write(ws, out_fir_path)) {
         return false;
     }
     bool match = true;
@@ -295,7 +267,7 @@ static inline bool sound_cert_emit_sheaf_fir(const sound_sheaf_witness_t *w,
     if (w == NULL || ws == NULL) {
         return false;
     }
-    sound_cert_init_prog(ws, "sheaf_h1_holonomy");
+    flow_ir_builder_init(ws, "sheaf_h1_holonomy");
     flow_ir_prog_t *p = &ws->ir_prog;
     p->num_inputs = 3U;
     p->inputs[0] = 0U;
@@ -309,16 +281,16 @@ static inline bool sound_cert_emit_sheaf_fir(const sound_sheaf_witness_t *w,
     snprintf(p->vals[2].name, sizeof(p->vals[2].name), "t20");
     p->num_vals = 3U;
 
-    uint32_t x01 = sound_cert_emit_op2(p, FLOW_IR_OP_XOR_VEC, 64U, 0U, 1U, "h01");
-    uint32_t hol = sound_cert_emit_op2(p, FLOW_IR_OP_XOR_VEC, 64U, x01, 2U, "holonomy");
-    uint32_t gluable = sound_cert_emit_op1(p, FLOW_IR_OP_EQ_ZERO, 1U, hol, 0U, "gluable");
+    uint32_t x01 = flow_ir_emit_op2(p, FLOW_IR_OP_XOR_VEC, 64U, 0U, 1U, "h01");
+    uint32_t hol = flow_ir_emit_op2(p, FLOW_IR_OP_XOR_VEC, 64U, x01, 2U, "holonomy");
+    uint32_t gluable = flow_ir_emit_op1(p, FLOW_IR_OP_EQ_ZERO, 1U, hol, 0U, "gluable");
     if (gluable == UINT32_MAX) {
         return false;
     }
     p->num_outputs = 2U;
     p->outputs[0] = hol;
     p->outputs[1] = gluable;
-    if (!sound_cert_seal_and_write_fir(ws, out_fir_path)) {
+    if (!flow_ir_builder_seal_packed_and_write(ws, out_fir_path)) {
         return false;
     }
 
@@ -748,7 +720,7 @@ static inline bool sound_cert_emit_aspect_fir(const char *out_fir_path, sound_ce
     if (ws == NULL) {
         return false;
     }
-    sound_cert_init_prog(ws, "aspect_telic_gate");
+    flow_ir_builder_init(ws, "aspect_telic_gate");
     flow_ir_prog_t *p = &ws->ir_prog;
     /* Input: 2-bit aspect code (0=state, 1=activity, 2=accomplishment, 3=achievement)
        telic bit == bit 1 of aspect code! */
@@ -758,15 +730,15 @@ static inline bool sound_cert_emit_aspect_fir(const char *out_fir_path, sound_ce
     snprintf(p->vals[0].name, sizeof(p->vals[0].name), "aspect2");
     p->num_vals = 1U;
 
-    uint32_t telic = sound_cert_emit_op1(p, FLOW_IR_OP_SLICE, 1U, 0U, 1U, "is_telic");
-    uint32_t dyn = sound_cert_emit_op1(p, FLOW_IR_OP_SLICE, 1U, 0U, 0U, "is_dyn");
+    uint32_t telic = flow_ir_emit_op1(p, FLOW_IR_OP_SLICE, 1U, 0U, 1U, "is_telic");
+    uint32_t dyn = flow_ir_emit_op1(p, FLOW_IR_OP_SLICE, 1U, 0U, 0U, "is_dyn");
     if (telic == UINT32_MAX || dyn == UINT32_MAX) {
         return false;
     }
     p->num_outputs = 2U;
     p->outputs[0] = telic;
     p->outputs[1] = dyn;
-    if (!sound_cert_seal_and_write_fir(ws, out_fir_path)) {
+    if (!flow_ir_builder_seal_packed_and_write(ws, out_fir_path)) {
         return false;
     }
 
@@ -884,7 +856,7 @@ static inline bool sound_cert_emit_presup_fir(const char *out_fir_path, sound_ce
     if (ws == NULL) {
         return false;
     }
-    sound_cert_init_prog(ws, "presup_strawson_eval");
+    flow_ir_builder_init(ws, "presup_strawson_eval");
     flow_ir_prog_t *p = &ws->ir_prog;
     p->num_inputs = 2U;
     p->inputs[0] = 0U;
@@ -895,17 +867,17 @@ static inline bool sound_cert_emit_presup_fir(const char *out_fir_path, sound_ce
     snprintf(p->vals[1].name, sizeof(p->vals[1].name), "presup2");
     p->num_vals = 2U;
 
-    uint32_t c0 = sound_cert_emit_const(p, 2U, UINT64_C(0), "bot");
-    uint32_t c_true = sound_cert_emit_const(p, 2U, UINT64_C(2), "btrue");
-    uint32_t diff = sound_cert_emit_op2(p, FLOW_IR_OP_XOR_VEC, 2U, 1U, c_true, "pdiff");
-    uint32_t p_ok = sound_cert_emit_op1(p, FLOW_IR_OP_EQ_ZERO, 1U, diff, 0U, "p_ok");
-    uint32_t res = sound_cert_emit_sel(p, 2U, p_ok, c0, 0U, "eval_out");
+    uint32_t c0 = flow_ir_emit_const(p, 2U, UINT64_C(0), "bot");
+    uint32_t c_true = flow_ir_emit_const(p, 2U, UINT64_C(2), "btrue");
+    uint32_t diff = flow_ir_emit_op2(p, FLOW_IR_OP_XOR_VEC, 2U, 1U, c_true, "pdiff");
+    uint32_t p_ok = flow_ir_emit_op1(p, FLOW_IR_OP_EQ_ZERO, 1U, diff, 0U, "p_ok");
+    uint32_t res = flow_ir_emit_sel(p, 2U, p_ok, c0, 0U, "eval_out");
     if (res == UINT32_MAX) {
         return false;
     }
     p->num_outputs = 1U;
     p->outputs[0] = res;
-    if (!sound_cert_seal_and_write_fir(ws, out_fir_path)) {
+    if (!flow_ir_builder_seal_packed_and_write(ws, out_fir_path)) {
         return false;
     }
 
@@ -1183,7 +1155,7 @@ static inline bool sound_cert_emit_contract_fir(const sound_contract_audit_t *au
     if (audit == NULL || ws == NULL) {
         return false;
     }
-    sound_cert_init_prog(ws, "contract_consent_gate");
+    flow_ir_builder_init(ws, "contract_consent_gate");
     flow_ir_prog_t *p = &ws->ir_prog;
     p->num_inputs = 2U;
     p->inputs[0] = 0U;
@@ -1194,16 +1166,16 @@ static inline bool sound_cert_emit_contract_fir(const sound_contract_audit_t *au
     snprintf(p->vals[1].name, sizeof(p->vals[1].name), "over_cap");
     p->num_vals = 2U;
 
-    uint32_t pair = sound_cert_emit_op2(p, FLOW_IR_OP_CONCAT, 2U, 0U, 1U, "pair2");
-    uint32_t vetoed = sound_cert_emit_op1(p, FLOW_IR_OP_OR_REDUCE, 1U, pair, 0U, "vetoed");
-    uint32_t cert = sound_cert_emit_op1(p, FLOW_IR_OP_NOT_VEC, 1U, vetoed, 0U, "certified");
+    uint32_t pair = flow_ir_emit_op2(p, FLOW_IR_OP_CONCAT, 2U, 0U, 1U, "pair2");
+    uint32_t vetoed = flow_ir_emit_op1(p, FLOW_IR_OP_OR_REDUCE, 1U, pair, 0U, "vetoed");
+    uint32_t cert = flow_ir_emit_op1(p, FLOW_IR_OP_NOT_VEC, 1U, vetoed, 0U, "certified");
     if (pair == UINT32_MAX || vetoed == UINT32_MAX || cert == UINT32_MAX) {
         return false;
     }
     p->num_outputs = 2U;
     p->outputs[0] = cert;
     p->outputs[1] = vetoed;
-    if (!sound_cert_seal_and_write_fir(ws, out_fir_path)) {
+    if (!flow_ir_builder_seal_packed_and_write(ws, out_fir_path)) {
         return false;
     }
 
