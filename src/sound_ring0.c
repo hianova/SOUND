@@ -1,4 +1,5 @@
 #include "sound.h"
+#include "flow_lat4_holonomy_ring0.h"
 
 /* ============================================================================
  * Internal SplitMix64 PRNG & SipHash-2-4
@@ -1833,44 +1834,35 @@ sound_fiber_t sound_lift_to_fir(const SoundArena *arena, const char *prog_name, 
  * ============================================================================ */
 
 uint8_t sound_b4_neg(uint8_t x) {
-    uint32_t xm = (uint32_t)x & 3U;
-    return (uint8_t)(((xm & 2U) >> 1U) | ((xm & 1U) << 1U));
+    return flow_lat4_flip(x);
 }
 
 uint8_t sound_b4_conf(uint8_t x) {
-    return (uint8_t)((uint32_t)sound_b4_neg(x) ^ 3U);
+    return flow_lat4_dual(x);
 }
 
 uint8_t sound_b4_and_t(uint8_t x, uint8_t y) {
-    uint32_t xu = (uint32_t)x;
-    uint32_t yu = (uint32_t)y;
-    return (uint8_t)(((xu & yu) & 2U) | ((xu | yu) & 1U));
+    return flow_lat4_meet_t(x, y);
 }
 
 uint8_t sound_b4_or_t(uint8_t x, uint8_t y) {
-    uint32_t xu = (uint32_t)x;
-    uint32_t yu = (uint32_t)y;
-    return (uint8_t)(((xu | yu) & 2U) | ((xu & yu) & 1U));
+    return flow_lat4_join_t(x, y);
 }
 
 uint8_t sound_b4_and_k(uint8_t x, uint8_t y) {
-    return (uint8_t)(((uint32_t)x & (uint32_t)y) & 3U);
+    return flow_lat4_meet_k(x, y);
 }
 
 uint8_t sound_b4_or_k(uint8_t x, uint8_t y) {
-    return (uint8_t)(((uint32_t)x | (uint32_t)y) & 3U);
+    return flow_lat4_join_k(x, y);
 }
 
 bool sound_b4_le_t(uint8_t x, uint8_t y) {
-    uint32_t xt = (uint32_t)x & 2U;
-    uint32_t yt = (uint32_t)y & 2U;
-    uint32_t xf = (uint32_t)x & 1U;
-    uint32_t yf = (uint32_t)y & 1U;
-    return (xt == 0U || yt != 0U) && (yf == 0U || xf != 0U);
+    return flow_lat4_le_t(x, y);
 }
 
 bool sound_b4_le_k(uint8_t x, uint8_t y) {
-    return (((uint32_t)x & 3U) & (~((uint32_t)y & 3U))) == 0U;
+    return flow_lat4_le_k(x, y);
 }
 
 uint32_t sound_graph_count_classical_models(uint32_t n, const uint8_t atk_to[8]) {
@@ -2088,44 +2080,19 @@ void sound_hunt_paradox_min(uint64_t seed, sound_paradox_witness_t *out) {
  * ============================================================================ */
 
 uint8_t sound_sheaf_holonomy_z4_3(uint8_t g01, uint8_t g12, uint8_t g20) {
-    return (uint8_t)(((uint32_t)g01 + (uint32_t)g12 + (uint32_t)g20) & 3U);
+    return flow_z4_cycle3(g01, g12, g20);
 }
 
 uint8_t sound_sheaf_holonomy_v4_3(uint8_t g01, uint8_t g12, uint8_t g20) {
-    return (uint8_t)(((uint32_t)g01 ^ (uint32_t)g12 ^ (uint32_t)g20) & 3U);
+    return flow_v4_cycle3(g01, g12, g20);
 }
 
 bool sound_sheaf_is_coboundary_z4_3(uint8_t g01, uint8_t g12, uint8_t g20) {
-    uint32_t e01 = (uint32_t)g01 & 3U;
-    uint32_t e12 = (uint32_t)g12 & 3U;
-    uint32_t e20 = (uint32_t)g20 & 3U;
-    for (uint32_t f0 = 0U; f0 < 4U; f0++) {
-        for (uint32_t f1 = 0U; f1 < 4U; f1++) {
-            for (uint32_t f2 = 0U; f2 < 4U; f2++) {
-                if ((((f1 - f0) & 3U) == e01) && (((f2 - f1) & 3U) == e12) &&
-                    (((f0 - f2) & 3U) == e20)) {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
+    return flow_z4_is_coboundary3(g01, g12, g20);
 }
 
 bool sound_sheaf_is_coboundary_v4_3(uint8_t g01, uint8_t g12, uint8_t g20) {
-    uint32_t e01 = (uint32_t)g01 & 3U;
-    uint32_t e12 = (uint32_t)g12 & 3U;
-    uint32_t e20 = (uint32_t)g20 & 3U;
-    for (uint32_t f0 = 0U; f0 < 4U; f0++) {
-        for (uint32_t f1 = 0U; f1 < 4U; f1++) {
-            for (uint32_t f2 = 0U; f2 < 4U; f2++) {
-                if (((f0 ^ f1) == e01) && ((f1 ^ f2) == e12) && ((f2 ^ f0) == e20)) {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
+    return flow_v4_is_coboundary3(g01, g12, g20);
 }
 
 static bool sound__sheaf_is_coboundary_z4_4(uint8_t g01, uint8_t g12, uint8_t g23, uint8_t g30) {

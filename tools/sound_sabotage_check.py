@@ -284,14 +284,22 @@ def build_sound_mutants() -> list[SoundMutant]:
         SoundMutant(
             "M19_b4_neg_no_swap",
             "bilattice_odd_cycle_classify",
-            "    return (uint8_t)(((xm & 2U) >> 1U) | ((xm & 1U) << 1U));",
-            "    return (uint8_t)xm;",
+            "uint8_t sound_b4_neg(uint8_t x) {\n"
+            "    return flow_lat4_flip(x);\n"
+            "}",
+            "uint8_t sound_b4_neg(uint8_t x) {\n"
+            "    return (uint8_t)((uint32_t)x & 3U);\n"
+            "}",
         ),
         SoundMutant(
             "M20_b4_conf_drop_xor",
             "bilattice_odd_cycle_classify",
-            "    return (uint8_t)((uint32_t)sound_b4_neg(x) ^ 3U);",
-            "    return sound_b4_neg(x);",
+            "uint8_t sound_b4_conf(uint8_t x) {\n"
+            "    return flow_lat4_dual(x);\n"
+            "}",
+            "uint8_t sound_b4_conf(uint8_t x) {\n"
+            "    return flow_lat4_flip(x);\n"
+            "}",
         ),
         SoundMutant(
             "M21_classical_model_invert_check",
@@ -348,35 +356,34 @@ def build_sound_mutants() -> list[SoundMutant]:
             "M25_sheaf_holonomy_z4_drop_g20",
             "sheaf_h1_holonomy",
             "uint8_t sound_sheaf_holonomy_z4_3(uint8_t g01, uint8_t g12, uint8_t g20) {\n"
-            "    return (uint8_t)(((uint32_t)g01 + (uint32_t)g12 + (uint32_t)g20) & 3U);\n"
+            "    return flow_z4_cycle3(g01, g12, g20);\n"
             "}",
             "uint8_t sound_sheaf_holonomy_z4_3(uint8_t g01, uint8_t g12, uint8_t g20) {\n"
             "    (void)g20;\n"
-            "    return (uint8_t)(((uint32_t)g01 + (uint32_t)g12) & 3U);\n"
+            "    return flow_z4_cycle3(g01, g12, UINT8_C(0));\n"
             "}",
         ),
         SoundMutant(
             "M26_sheaf_holonomy_v4_drop_g12",
             "sheaf_h1_holonomy",
             "uint8_t sound_sheaf_holonomy_v4_3(uint8_t g01, uint8_t g12, uint8_t g20) {\n"
-            "    return (uint8_t)(((uint32_t)g01 ^ (uint32_t)g12 ^ (uint32_t)g20) & 3U);\n"
+            "    return flow_v4_cycle3(g01, g12, g20);\n"
             "}",
             "uint8_t sound_sheaf_holonomy_v4_3(uint8_t g01, uint8_t g12, uint8_t g20) {\n"
             "    (void)g12;\n"
-            "    return (uint8_t)(((uint32_t)g01 ^ (uint32_t)g20) & 3U);\n"
+            "    return flow_v4_cycle3(g01, UINT8_C(0), g20);\n"
             "}",
         ),
         SoundMutant(
             "M27_sheaf_coboundary_z4_ignore_e20",
             "sheaf_h1_holonomy",
-            "                if ((((f1 - f0) & 3U) == e01) && (((f2 - f1) & 3U) == e12) &&\n"
-            "                    (((f0 - f2) & 3U) == e20)) {\n"
-            "                    return true;\n"
-            "                }",
-            "                if ((((f1 - f0) & 3U) == e01) && (((f2 - f1) & 3U) == e12)) {\n"
-            "                    (void)e20;\n"
-            "                    return true;\n"
-            "                }",
+            "bool sound_sheaf_is_coboundary_z4_3(uint8_t g01, uint8_t g12, uint8_t g20) {\n"
+            "    return flow_z4_is_coboundary3(g01, g12, g20);\n"
+            "}",
+            "bool sound_sheaf_is_coboundary_z4_3(uint8_t g01, uint8_t g12, uint8_t g20) {\n"
+            "    (void)g20;\n"
+            "    return flow_z4_is_coboundary3(g01, g12, (uint8_t)(4U - (((uint32_t)g01 + (uint32_t)g12) & 3U)));\n"
+            "}",
         ),
         # --- 10. sheaf_h1_obstruction_hunt (3) ---
         SoundMutant(
